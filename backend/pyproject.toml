@@ -1,0 +1,41 @@
+[project]
+name = "ase-security-review"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "chromadb>=1.5.9",
+    "fastapi>=0.141.1",
+    "httpx>=0.28.1",
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.15.0",
+    "pypdf>=6.16.1",
+    "python-multipart>=0.0.32",
+    "pyyaml>=6.0.3",
+    "rank-bm25>=0.2.2",
+    "sqlalchemy>=2.0.52",
+    "uvicorn[standard]>=0.52.4",
+]
+
+[project.scripts]
+ase-security-review = "ase_security_review.__main__:main"
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = [
+    "ignore:.*cannot collect test class 'TestLevel'.*:pytest.PytestCollectionWarning",
+    "ignore:.*asyncio.iscoroutinefunction.*:DeprecationWarning",
+    "ignore:.*telemetry.*:DeprecationWarning",
+]

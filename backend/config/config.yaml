@@ -1,0 +1,31 @@
+# App configuration. Edit this file to pick your Ollama models and tune behaviour.
+
+llm:
+  # Ollama server location (local, on-premise)
+  base_url: "http://127.0.0.1:11434"
+  # Reasoning model used for fact extraction + final security decision.
+  # Change freely to any model you have pulled, e.g. qwen3:8b, llama3.1:8b, qwen2.5:14b
+  reasoning_model: "qwen3.5:9b-mlx"
+  # Embedding model used to index SOP/policy/previous-review documents.
+  embedding_model: "qwen3-embedding:0.6b"
+  embedding_dim: 1024
+  temperature: 0.1
+  max_tokens: 4096
+  request_timeout_sec: 300
+
+extraction:
+  # auto | text | ocr
+  #   text -> pypdf text layer only
+  #   ocr  -> run ocrmypdf/tesseract on every PDF
+  #   auto -> try text; if char density falls below auto_detect_threshold
+  #           chars/page, flag the doc as NEEDS_OCR (you can run OCR from the UI)
+  default_mode: "auto"
+  auto_detect_threshold: 50
+
+data_dir: "data"
+poll_interval_sec: 10
+chunk_size: 900
+chunk_overlap: 120
+embed_batch_size: 64
+retrieval_top_k: 6
+review_max_input_chars: 60000

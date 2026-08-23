@@ -1,0 +1,90 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Design system: Trust & Authority (navy professional + paid green) */
+@theme {
+  --color-primary: #1e3a5f;
+  --color-on-primary: #ffffff;
+  --color-secondary: #2563eb;
+  --color-accent: #059669;
+  --color-background: #f8fafc;
+  --color-foreground: #0f172a;
+  --color-muted: #f1f3f5;
+  --color-border: #e4e7eb;
+  --color-destructive: #dc2626;
+  --color-warning: #d97706;
+
+  --font-sans: 'Fira Sans Variable', 'Fira Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Fira Code Variable', 'Fira Code', ui-monospace, SFMono-Regular, monospace;
+}
+
+:root {
+  --ase-primary: #1e3a5f;
+  --ase-on-primary: #ffffff;
+  --ase-secondary: #2563eb;
+  --ase-accent: #059669;
+  --ase-background: #f8fafc;
+  --ase-foreground: #0f172a;
+  --ase-muted: #f1f3f5;
+  --ase-border: #e4e7eb;
+  --ase-destructive: #dc2626;
+  --ase-warning: #d97706;
+}
+
+.dark {
+  --ase-primary: #3b5b8c;
+  --ase-on-primary: #ffffff;
+  --ase-secondary: #60a5fa;
+  --ase-accent: #34d399;
+  --ase-background: #0b1220;
+  --ase-foreground: #e2e8f0;
+  --ase-muted: #16202f;
+  --ase-border: #223045;
+  --ase-destructive: #f87171;
+  --ase-warning: #fbbf24;
+}
+
+@theme inline {
+  --color-primary: var(--ase-primary);
+  --color-on-primary: var(--ase-on-primary);
+  --color-secondary: var(--ase-secondary);
+  --color-accent: var(--ase-accent);
+  --color-background: var(--ase-background);
+  --color-foreground: var(--ase-foreground);
+  --color-muted: var(--ase-muted);
+  --color-border: var(--ase-border);
+  --color-destructive: var(--ase-destructive);
+  --color-warning: var(--ase-warning);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--ase-background);
+  color: var(--ase-foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Focus rings for keyboard navigation */
+:focus-visible {
+  outline: 2px solid var(--ase-secondary);
+  outline-offset: 2px;
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
