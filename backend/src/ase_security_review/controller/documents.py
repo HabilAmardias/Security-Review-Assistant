@@ -74,6 +74,13 @@ def rescan_dropbox(request: Request):
     return {"enqueued": count}
 
 
+@router.post("/reindex")
+def reindex_documents(request: Request):
+    c = get_container(request)
+    run_backend(c.ingestion.reindex_all)
+    return {"started": True}
+
+
 @router.post("/{doc_id}/unlock")
 def unlock_document(doc_id: str, body: UnlockRequest, request: Request):
     c = get_container(request)

@@ -14,6 +14,8 @@ DEFAULT_FACTS = {
     "app_name": "Payment Portal",
     "app_type": "web",
     "exposure": "internet-facing",
+    "change_scope": "infra_config_change",
+    "change_scope_evidence": "No change to business logic or business process.",
     "technologies": ["react", "python"],
     "data_classes": ["payment", "pii"],
     "features": ["authentication", "integration", "internet-facing"],
@@ -28,8 +30,8 @@ DEFAULT_FACTS = {
 
 DEFAULT_DECISION = {
     "requires_pentest": True,
-    "test_level": "both",
-    "classification_reason": "Payment portal processing cardholder data; rule R-01 fired; previous review of similar payment app required both.",
+    "test_level": "pentest",
+    "classification_reason": "Payment portal processing cardholder data; rule R-01 fired; previous review of similar payment app required pentest.",
     "risk_factors": ["cardholder data", "internet-facing", "admin authz"],
     "scope": {
         "in_scope": ["web app", "REST APIs", "auth flows"],
@@ -38,7 +40,6 @@ DEFAULT_DECISION = {
         "environments": ["staging pre-release"],
         "effort_estimate": "3-5 person-days",
     },
-    "recommended_frameworks": ["pci_dss", "owasp_asvs"],
 }
 
 
@@ -111,3 +112,13 @@ class InMemoryVectorRepository(VectorRepository):
 
     def count(self):
         return len(self._chunks)
+
+    def reset_collection(self):
+        self._chunks.clear()
+        self._embs.clear()
+
+    def dimension_matches(self, embedding_dim):
+        for emb in self._embs.values():
+            if len(emb) != embedding_dim:
+                return False
+        return True

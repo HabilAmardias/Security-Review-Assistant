@@ -41,12 +41,29 @@ def seed_knowledge(container) -> None:
             document_id="prev",
             doc_type=DocType.PREVIOUS_REVIEW,
             doc_name="PREV_Review_PaymentPortal.pdf",
-            text="Verdict: BOTH (pentest + DAST). Alasan: aplikasi memproses data kartu pembayaran. Scope: web app, REST API pembayaran, auth flows.",
+            text="Verdict: PENTEST. Alasan: aplikasi memproses data kartu pembayaran. Scope: web app, REST API pembayaran, auth flows.",
             chunk_index=0,
             embedding=[0.9, 0.1],
         ),
     ]
     container.vectors.upsert_chunks(chunks)
+
+
+def test_rule_engine_disabled(container):
+    seed_knowledge(container)
+    container.config.enable_rule_engine = False
+
+    review = container.review_usecase.create_review("frd.pdf", FRD, "nfrd.pdf", NFRD)
+    review = container.review_usecase.run_review(review.id)
+
+    assert review.status == ReviewStatus.COMPLETED
+    assert review.rule_engine_enabled is False
+    assert review.rules_fired == []
+    assert review.rule_test_level is None
+    assert review.conflicts == []
+    assert review.llm_decision is not None  # LLM still decides on its own
+    # the rules block in the prompt should mention the engine is disabled
+    assert any("DISABLED" in call for call in container.review_usecase._llm.generate_calls)
 
 
 def test_full_review_pipeline(container):
@@ -56,20 +73,100 @@ def test_full_review_pipeline(container):
 
     assert review.status == ReviewStatus.COMPLETED
     assert review.facts["data_classes"] == DEFAULT_FACTS["data_classes"]
-    assert review.rules_fired, "payment data should fire rules"
-    assert any(r.id == "R-01" for r in review.rules_fired)
-    assert review.rule_test_level == TestLevel.BOTH
+    assert review.rules_fired, "internet-facing facts should fire a rule"
+    assert any(r.id == "R-06" for r in review.rules_fired)
+    # only the exposure rules remain: internet -> dast floor (no pentest mandate)
+    assert review.rule_test_level == TestLevel.DAST
     assert review.llm_decision is not None
     assert review.llm_decision.requires_pentest is True
-    assert review.llm_decision.test_level == TestLevel.BOTH
+    assert review.llm_decision.test_level == TestLevel.PENTEST
     assert review.retrieved_sources, "should reference retrieved SOP/previous docs"
     assert "SOP_PentestSelection.pdf" in review.retrieved_sources or "PREV_Review_PaymentPortal.pdf" in review.retrieved_sources
     assert review.final_decision is not None
     assert review.llm_decision.scope.in_scope
-    assert not review.conflicts  # rule engine and LLM agree here
+    # rules say dast but the LLM recommends pentest -> conflict flagged for a human
+    assert review.conflicts
+    assert any(c.field == "requires_pentest" for c in review.conflicts)
 
 
-def test_conflict_detected_when_llm_disagrees(container):
+def test_intranet_cap_enforced_on_final_decision(container):
+    # intranet facts + LLM recommends pentest -> the cap clamps the FINAL verdict
+    from ase_security_review.domain.models import FormField
+
+    seed_knowledge(container)
+    review = container.review_usecase.create_review(
+        "frd.md",
+        "Payment checkout with SSO.",
+        "nfrd.md",
+        "Internal corporate tool.",
+        detected_exposure="internal",
+        form_fields=[FormField(label="Aplikasi diakses secara", options=["Internet", "Intranet", "Lainnya"], selected=["Intranet"])],
+    )
+    review = container.review_usecase.run_review(review.id)
+
+    assert review.status == ReviewStatus.COMPLETED
+    assert review.facts["exposure"] == "internal"  # detected exposure wins over the LLM
+    assert any(r.id == "R-11" for r in review.rules_fired)
+    assert review.rule_test_level == TestLevel.DAST
+    # the LLM says pentest, but the intranet cap clamps the final decision to dast
+    assert review.llm_decision.test_level == TestLevel.PENTEST
+    assert review.final_decision.test_level == TestLevel.DAST
+    assert any(c.field == "requires_pentest" for c in review.conflicts)
+
+
+def test_data_classes_grounded_from_form_field(container):
+    from ase_security_review.domain.models import FormField
+
+    seed_knowledge(container)
+    review = container.review_usecase.create_review(
+        "frd.md",
+        "Payment checkout.",
+        "nfrd.md",
+        "Internal portal.",
+        detected_exposure="internal",
+        form_fields=[
+            FormField(
+                label="Karakteristik Aplikasi",
+                options=["Financial Transaction", "Non-Financial Transaction", "PII", "Lainnya"],
+                selected=["Financial Transaction"],
+            )
+        ],
+    )
+    review = container.review_usecase.run_review(review.id)
+    assert review.facts["data_classes"] == ["financial"]
+    assert "data_classes_llm" in review.facts
+
+
+def test_change_scope_carried_into_facts(container):
+    seed_knowledge(container)
+    review = container.review_usecase.create_review("frd.md", "text", "nfrd.md", "text")
+    review = container.review_usecase.run_review(review.id)
+    assert review.facts["change_scope"] == DEFAULT_FACTS["change_scope"]
+    assert review.facts["change_scope_evidence"] == DEFAULT_FACTS["change_scope_evidence"]
+
+
+def test_human_exposure_override_recomputes(container):
+    from ase_security_review.domain.models import FormField
+
+    seed_knowledge(container)
+    review = container.review_usecase.create_review(
+        "frd.md", "Payment checkout.", "nfrd.md", "Customer portal.",
+        detected_exposure="internet-facing",
+        form_fields=[FormField(label="Aplikasi diakses secara", options=["Internet", "Intranet"], selected=["Internet"])],
+    )
+    review = container.review_usecase.run_review(review.id)
+    assert review.facts["exposure"] == "internet-facing"
+    assert review.final_decision.test_level == TestLevel.PENTEST  # LLM pentest, no cap
+
+    # human corrects exposure to intranet -> rules recomputed, final clamped to dast
+    review = container.review_usecase.update_exposure(review.id, "internal")
+    assert review.exposure_override == "internal"
+    assert review.facts["exposure"] == "internal"
+    assert any(r.id == "R-11" for r in review.rules_fired)
+    assert review.final_decision.test_level == TestLevel.DAST
+
+
+def test_llm_matching_rules_no_conflict(container):
     seed_knowledge(container)
     fake: FakeLlm = container.review_usecase._llm
     fake.decision = dict(DEFAULT_DECISION, requires_pentest=False, test_level="dast")
@@ -78,8 +175,8 @@ def test_conflict_detected_when_llm_disagrees(container):
     review = container.review_usecase.run_review(review.id)
 
     assert review.status == ReviewStatus.COMPLETED
-    assert review.conflicts, "LLM lighter than rules should flag a conflict"
-    assert any(c.field == "requires_pentest" for c in review.conflicts)
+    assert review.rule_test_level == TestLevel.DAST
+    assert review.conflicts == []  # LLM agrees with the rules
 
 
 def test_set_final_decision(container):
@@ -94,7 +191,6 @@ def test_set_final_decision(container):
         classification_reason=decision.classification_reason,
         risk_factors=decision.risk_factors,
         scope=decision.scope,
-        recommended_frameworks=decision.recommended_frameworks,
     )
     review = container.review_usecase.set_final_decision(review.id, override)
     assert review.final_decision.requires_pentest is False

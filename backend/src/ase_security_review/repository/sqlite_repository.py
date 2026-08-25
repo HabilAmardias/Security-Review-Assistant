@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from ..data.models import DocumentRow, ReviewRow
-from ..domain.enums import DocStatus, DocType, ExtractionMode, ReviewStatus, TestLevel
+from ..domain.enums import DocStatus, DocType, ExtractionMode, ReviewStatus, TestLevel, parse_test_level
 from ..domain.models import Document, Review
 from .base import DocumentRepository, ReviewRepository
 from .serialization import (
@@ -18,6 +18,8 @@ from .serialization import (
     decision_to_dict,
     fired_rule_from_dict,
     fired_rule_to_dict,
+    form_field_from_dict,
+    form_field_to_dict,
 )
 
 
@@ -115,6 +117,10 @@ def _review_to_row(review: Review) -> dict:
         "frd_text": review.frd_text or None,
         "nfrd_text": review.nfrd_text or None,
         "facts_json": json.dumps(review.facts) if review.facts else None,
+        "rule_engine_enabled": int(review.rule_engine_enabled),
+        "detected_exposure": review.detected_exposure,
+        "exposure_override": review.exposure_override,
+        "form_fields_json": json.dumps([form_field_to_dict(f) for f in review.form_fields]) if review.form_fields else None,
         "sources_json": json.dumps(review.retrieved_sources) if review.retrieved_sources else None,
         "rules_json": json.dumps([fired_rule_to_dict(r) for r in review.rules_fired]) if review.rules_fired else None,
         "rule_test_level": review.rule_test_level.value if review.rule_test_level else None,
@@ -144,9 +150,13 @@ def _row_to_review(row) -> Review:
         frd_text=row.frd_text or "",
         nfrd_text=row.nfrd_text or "",
         facts=_load(row.facts_json),
+        rule_engine_enabled=bool(row.rule_engine_enabled),
+        detected_exposure=row.detected_exposure,
+        exposure_override=row.exposure_override,
+        form_fields=[form_field_from_dict(d) for d in (_load(row.form_fields_json) or [])],
         retrieved_sources=list(_load(row.sources_json) or []),
         rules_fired=[fired_rule_from_dict(d) for d in (_load(row.rules_json) or [])],
-        rule_test_level=TestLevel(row.rule_test_level) if row.rule_test_level else None,
+        rule_test_level=parse_test_level(row.rule_test_level) if row.rule_test_level else None,
         llm_decision=decision_from_dict(_load(row.decision_json)),
         final_decision=decision_from_dict(_load(row.final_json)),
         conflicts=[conflict_from_dict(d) for d in (_load(row.conflicts_json) or [])],
@@ -186,3 +196,29 @@ class SqliteReviewRepository(ReviewRepository):
         with self._sf() as session:
             rows = session.execute(select(ReviewRow).order_by(ReviewRow.created_at.desc())).scalars().all()
             return [_row_to_review(r) for r in rows]
+
+    def delete(self, review_id: str) -> None:
+        with self._sf() as session:
+            row = session.get(ReviewRow, review_id)
+            if row:
+                session.delete(row)
+                session.commit()
+
+    def mark_stale_running_failed(self) -> int:
+        """Mark reviews stuck in 'running' (e.g. from a server restart) as failed."""
+        from datetime import datetime, timezone
+
+        with self._sf() as session:
+            count = (
+                session.query(ReviewRow)
+                .filter(ReviewRow.status == ReviewStatus.RUNNING.value)
+                .update(
+                    {
+                        "status": ReviewStatus.FAILED.value,
+                        "error": "Review interrupted by a server restart.",
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                )
+            )
+            session.commit()
+            return count

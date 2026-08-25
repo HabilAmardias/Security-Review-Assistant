@@ -61,6 +61,19 @@ export function KnowledgeBase() {
     }
   }
 
+  const reindex = async () => {
+    setBusy(true)
+    setNotice(null)
+    try {
+      await api.reindexAll()
+      setNotice('Index rebuild started — documents are being re-embedded with the current model.')
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="mx-auto max-w-5xl">
       <header className="mb-8 flex items-end justify-between">
@@ -70,14 +83,25 @@ export function KnowledgeBase() {
             SOP, policies, and previous security reviews the agent uses to decide pentest vs DAST.
           </p>
         </div>
-        <button
-          onClick={() => void rescan()}
-          disabled={busy}
-          className="flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
-        >
-          <ArrowsClockwise size={16} className={busy ? 'animate-spin' : ''} />
-          Scan drop folder
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => void reindex()}
+            disabled={busy}
+            title="Use after changing the embedding model"
+            className="flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
+          >
+            <ArrowsClockwise size={16} className={busy ? 'animate-spin' : ''} />
+            Rebuild index
+          </button>
+          <button
+            onClick={() => void rescan()}
+            disabled={busy}
+            className="flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
+          >
+            <ArrowsClockwise size={16} className={busy ? 'animate-spin' : ''} />
+            Scan drop folder
+          </button>
+        </div>
       </header>
 
       {notice && (

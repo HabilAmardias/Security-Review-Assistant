@@ -1,4 +1,4 @@
-"""Health, models, and compliance framework routes."""
+"""Health and models routes."""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ def health(request: Request):
         "models": c.llm.list_models(),
         "reasoning_model": c.config.llm.reasoning_model,
         "embedding_model": c.config.llm.embedding_model,
+        "enable_rule_engine": c.config.enable_rule_engine,
         "documents_indexed": c.vectors.count(),
     }
 
@@ -31,19 +32,3 @@ def models(request: Request):
         "reasoning_model": c.config.llm.reasoning_model,
         "embedding_model": c.config.llm.embedding_model,
     }
-
-
-@router.get("/frameworks")
-def frameworks(request: Request):
-    c = get_container(request)
-    enabled = c.config.compliance.enabled
-    return [
-        {
-            "key": key,
-            "name": fw.name,
-            "description": fw.description,
-            "test_level": fw.test_level,
-        }
-        for key, fw in c.config.compliance.frameworks.items()
-        if key in enabled
-    ]

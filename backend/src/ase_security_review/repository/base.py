@@ -50,6 +50,12 @@ class VectorRepository(ABC):
     @abstractmethod
     def count(self) -> int: ...
 
+    @abstractmethod
+    def reset_collection(self) -> None: ...
+
+    @abstractmethod
+    def dimension_matches(self, embedding_dim: int) -> bool: ...
+
 
 class ReviewRepository(ABC):
     @abstractmethod
@@ -63,6 +69,12 @@ class ReviewRepository(ABC):
 
     @abstractmethod
     def list(self) -> list[Review]: ...
+
+    @abstractmethod
+    def delete(self, review_id: str) -> None: ...
+
+    @abstractmethod
+    def mark_stale_running_failed(self) -> int: ...
 
 
 class LlmPort(ABC):

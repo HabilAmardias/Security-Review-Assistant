@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Cpu, Database, ShieldCheck } from '@phosphor-icons/react'
+import { Cpu, Database } from '@phosphor-icons/react'
 import { api } from '../api/client'
-import type { Framework, Health, ModelsInfo } from '../types'
+import type { Health, ModelsInfo } from '../types'
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -15,15 +15,13 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 export function Settings() {
   const [health, setHealth] = useState<Health | null>(null)
   const [models, setModels] = useState<ModelsInfo | null>(null)
-  const [frameworks, setFrameworks] = useState<Framework[]>([])
   const [err, setErr] = useState<string | null>(null)
 
   useEffect(() => {
-    Promise.all([api.health(), api.models(), api.frameworks()])
-      .then(([h, m, f]) => {
+    Promise.all([api.health(), api.models()])
+      .then(([h, m]) => {
         setHealth(h)
         setModels(m)
-        setFrameworks(f)
       })
       .catch((e) => setErr(e instanceof Error ? e.message : String(e)))
   }, [])
@@ -62,28 +60,6 @@ export function Settings() {
             )}
           </div>
         </div>
-      </section>
-
-      <section className="overflow-hidden rounded-xl border border-border bg-background">
-        <h2 className="flex items-center gap-2 border-b border-border px-5 py-3 text-sm font-semibold uppercase tracking-wide text-foreground/60">
-          <ShieldCheck size={16} />
-          Enabled compliance frameworks
-        </h2>
-        <ul className="divide-y divide-border">
-          {frameworks.map((f) => (
-            <li key={f.key} className="px-5 py-3">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-medium">
-                  <span className="font-mono text-xs text-secondary">{f.key}</span> · {f.name}
-                </p>
-                <span className="rounded-full border border-border bg-muted px-2.5 py-0.5 font-mono text-[10px] uppercase text-foreground/60">
-                  {f.test_level}
-                </span>
-              </div>
-              <p className="mt-1 text-xs text-foreground/60">{f.description}</p>
-            </li>
-          ))}
-        </ul>
       </section>
 
       <section className="overflow-hidden rounded-xl border border-border bg-background">

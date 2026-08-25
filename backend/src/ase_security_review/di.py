@@ -28,6 +28,7 @@ class Container:
 
         self.documents = SqliteDocumentRepository(self.session_factory)
         self.reviews = SqliteReviewRepository(self.session_factory)
+        self.reviews.mark_stale_running_failed()
         self.vectors = ChromaVectorRepository(self.config.chroma_dir, self.config.llm.embedding_dim)
         self.llm = OllamaClient(self.config.llm)
 
@@ -51,6 +52,11 @@ class Container:
             Path(path).mkdir(parents=True, exist_ok=True)
 
     def start_background(self) -> None:
+        # If the embedding model (vector dimension) changed, rebuild the index
+        # from the plaintext cache before the watcher starts so no concurrent
+        # Chroma writes race with the reset.
+        if not self.vectors.dimension_matches(self.config.llm.embedding_dim):
+            self.ingestion.reindex_all()
         self.watcher.start()
 
     def shutdown(self) -> None:

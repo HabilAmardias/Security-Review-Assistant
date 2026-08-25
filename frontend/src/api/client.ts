@@ -2,7 +2,6 @@ import type {
   Decision,
   Document,
   DocType,
-  Framework,
   Health,
   ModelsInfo,
   Review,
@@ -30,10 +29,10 @@ function json(method: string, body: unknown): RequestInit {
 export const api = {
   health: () => req<Health>('/health'),
   models: () => req<ModelsInfo>('/models'),
-  frameworks: () => req<Framework[]>('/frameworks'),
 
   documents: () => req<Document[]>('/documents'),
   rescan: () => req<{ enqueued: number }>('/documents/rescan', { method: 'POST' }),
+  reindexAll: () => req<{ started: boolean }>('/documents/reindex', { method: 'POST' }),
   uploadDocument: (file: File, docType: DocType, mode?: string, password?: string) => {
     const form = new FormData()
     form.append('file', file)
@@ -51,19 +50,25 @@ export const api = {
 
   reviews: () => req<Review[]>('/reviews'),
   review: (id: string) => req<Review>(`/reviews/${id}`),
+  deleteReview: (id: string) =>
+    req<{ deleted: string }>(`/reviews/${id}`, { method: 'DELETE' }),
   createReview: (
     frd: File,
     nfrd: File,
     frdPassword?: string,
     nfrdPassword?: string,
+    exposure?: string,
   ) => {
     const form = new FormData()
     form.append('frd', frd)
     form.append('nfrd', nfrd)
     if (frdPassword) form.append('frd_password', frdPassword)
     if (nfrdPassword) form.append('nfrd_password', nfrdPassword)
+    if (exposure && exposure !== 'auto') form.append('exposure', exposure)
     return req<Review>('/reviews', { method: 'POST', body: form })
   },
+  updateExposure: (id: string, exposure: string | null) =>
+    req<Review>(`/reviews/${id}/exposure`, json('PATCH', { exposure })),
   setDecision: (id: string, decision: Decision) =>
     req<Review>(`/reviews/${id}/decision`, json('PATCH', decision)),
 }

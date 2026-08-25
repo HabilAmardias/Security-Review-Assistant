@@ -66,7 +66,6 @@ class SecurityDecision:
     classification_reason: str
     risk_factors: list[str] = field(default_factory=list)
     scope: Scope = field(default_factory=Scope)
-    recommended_frameworks: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -76,7 +75,7 @@ class FiredRule:
     test_level: TestLevel
     priority: str
     reasoning: str
-    frameworks: list[str] = field(default_factory=list)
+    cap: TestLevel | None = None
 
 
 @dataclass
@@ -88,6 +87,15 @@ class Conflict:
 
 
 @dataclass
+class FormField:
+    label: str = ""
+    options: list[str] = field(default_factory=list)
+    selected: list[str] = field(default_factory=list)
+    source_line: str = ""
+    page: int = 1
+
+
+@dataclass
 class Review:
     id: str
     status: ReviewStatus
@@ -96,6 +104,13 @@ class Review:
     frd_text: str = ""
     nfrd_text: str = ""
     facts: dict[str, Any] | None = None
+    rule_engine_enabled: bool = True
+    # app exposure derived from the PDF form fields
+    detected_exposure: str | None = None
+    # human-confirmed exposure override (internal | internet-facing | partner)
+    exposure_override: str | None = None
+    # deterministic form selections extracted from the FRD/NFRD PDFs
+    form_fields: list[FormField] = field(default_factory=list)
     retrieved_sources: list[str] = field(default_factory=list)
     rules_fired: list[FiredRule] = field(default_factory=list)
     llm_decision: SecurityDecision | None = None

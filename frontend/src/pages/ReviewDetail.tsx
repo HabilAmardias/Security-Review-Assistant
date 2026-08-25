@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowsClockwise,
   CheckCircle,
   FileText,
   GearSix,
+  Globe,
   ListChecks,
   ShieldCheck,
+  Trash,
   WarningCircle,
 } from '@phosphor-icons/react'
 import { api } from '../api/client'
@@ -14,6 +16,13 @@ import { Stepper } from '../components/Stepper'
 import { VerdictBanner } from '../components/VerdictBanner'
 import { useReview } from '../hooks/useReviews'
 import type { Decision, TestLevel } from '../types'
+
+const EXPOSURE_LABELS: Record<string, string> = {
+  internal: 'Intranet',
+  'internet-facing': 'Internet-facing',
+  partner: 'Partner / External',
+  unclear: 'Unclear',
+}
 
 function Card({ title, icon, children }: { title: string; icon?: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -42,10 +51,13 @@ function ChipList({ items }: { items: string[] }) {
 
 export function ReviewDetail() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const { review, error, loading } = useReview(id)
   const [overriding, setOverriding] = useState(false)
   const [override, setOverride] = useState<Decision | null>(null)
   const [saveMsg, setSaveMsg] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleteMsg, setDeleteMsg] = useState<string | null>(null)
 
   const agent = review?.llm_decision
   const final = review?.final_decision
@@ -56,6 +68,12 @@ export function ReviewDetail() {
       agent.requires_pentest !== final.requires_pentest
     )
   }, [agent, final])
+
+  const effectiveExposure =
+    review?.exposure_override ??
+    review?.detected_exposure ??
+    (review?.facts?.exposure as string | undefined) ??
+    'unclear'
 
   if (loading && !review) return <p className="text-sm text-foreground/50">Loading review…</p>
   if (error) return <p className="text-sm text-destructive">Failed to load: {error}</p>
@@ -71,6 +89,17 @@ export function ReviewDetail() {
       setOverride(null)
     } catch (err) {
       setSaveMsg(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  const removeReview = async () => {
+    setDeleteMsg(null)
+    try {
+      await api.deleteReview(review.id)
+      navigate('/reviews')
+    } catch (err) {
+      setDeleteMsg(err instanceof Error ? err.message : String(err))
+      setConfirmDelete(false)
     }
   }
 
@@ -95,7 +124,36 @@ export function ReviewDetail() {
           >
             {review.status}
           </span>
+          <div className="flex items-center gap-2">
+            {confirmDelete ? (
+              <span className="flex items-center gap-1 rounded-lg border border-border bg-background px-2 py-1 text-xs text-foreground/70">
+                Delete this review?
+                <button
+                  onClick={() => void removeReview()}
+                  className="rounded bg-destructive px-2 py-1 text-xs font-semibold text-white hover:opacity-90"
+                >
+                  Yes
+                </button>
+                <button
+                  onClick={() => setConfirmDelete(false)}
+                  className="rounded px-2 py-1 text-xs hover:bg-muted"
+                >
+                  No
+                </button>
+              </span>
+            ) : (
+              <button
+                onClick={() => setConfirmDelete(true)}
+                className="rounded-lg border border-border p-2 text-foreground/60 hover:bg-destructive/10 hover:text-destructive"
+                title="Delete review"
+                aria-label="Delete review"
+              >
+                <Trash size={16} />
+              </button>
+            )}
+          </div>
         </div>
+        {deleteMsg && <p className="mt-2 text-xs text-destructive">{deleteMsg}</p>}
       </header>
 
       {review.status === 'running' && (
@@ -130,6 +188,58 @@ export function ReviewDetail() {
         <div className="space-y-6">
           <VerdictBanner decision={final} overridden={overridden} />
 
+          <Card title="App exposure" icon={<Globe size={16} />}>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm">
+                  <strong>{EXPOSURE_LABELS[effectiveExposure] ?? effectiveExposure ?? '—'}</strong>
+                  {review.exposure_override && (
+                    <span className="ml-2 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-[10px] uppercase text-primary">
+                      override
+                    </span>
+                  )}
+                  {!review.exposure_override && review.detected_exposure && (
+                    <span className="ml-2 rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 text-[10px] uppercase text-accent">
+                      from PDF form
+                    </span>
+                  )}
+                  {!review.exposure_override && !review.detected_exposure && (
+                    <span className="ml-2 rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] uppercase text-foreground/60">
+                      from LLM
+                    </span>
+                  )}
+                </p>
+                <p className="mt-0.5 text-xs text-foreground/50">
+                  Drives the intranet (DAST-only) vs internet-facing rules.
+                </p>
+              </div>
+              <select
+                value={effectiveExposure}
+                onChange={async (e) => {
+                  const v = e.target.value
+                  try {
+                    await api.updateExposure(review.id, v === 'unclear' ? null : v)
+                  } catch (err) {
+                    setSaveMsg(err instanceof Error ? err.message : String(err))
+                  }
+                }}
+                className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                aria-label="Confirm app exposure"
+              >
+                <option value="internal">Intranet</option>
+                <option value="internet-facing">Internet-facing</option>
+                <option value="partner">Partner / External</option>
+                <option value="unclear">Unclear — confirm</option>
+              </select>
+            </div>
+            {effectiveExposure === 'unclear' && (
+              <p className="mt-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
+                Exposure could not be determined from the documents. Confirm it above so the intranet /
+                internet-facing rules fire correctly.
+              </p>
+            )}
+          </Card>
+
           {review.conflicts.length > 0 && (
             <div className="rounded-xl border border-warning/40 bg-warning/10 p-4">
               <h3 className="flex items-center gap-2 text-sm font-semibold text-warning">
@@ -154,16 +264,32 @@ export function ReviewDetail() {
             <p className="text-sm leading-relaxed text-foreground/85">
               {final.classification_reason}
             </p>
+            {(() => {
+              const scope = review.facts?.change_scope as string | undefined
+              const evidence = review.facts?.change_scope_evidence as string | undefined
+              if (!scope) return null
+              return (
+                <div className="mt-4 rounded-lg border border-border bg-muted/40 p-3">
+                  <p className="text-xs font-medium text-foreground/60">
+                    Change scope:{' '}
+                    <span className="font-semibold text-foreground">
+                      {scope.replace(/_/g, ' ')}
+                    </span>
+                  </p>
+                  {evidence && (
+                    <p className="mt-1 text-xs text-foreground/60">
+                      <span className="font-mono text-foreground/40">"</span>
+                      {evidence}
+                      <span className="font-mono text-foreground/40">"</span>
+                    </p>
+                  )}
+                </div>
+              )
+            })()}
             {final.risk_factors.length > 0 && (
               <div className="mt-4">
                 <p className="mb-2 text-xs font-medium text-foreground/60">Risk factors</p>
                 <ChipList items={final.risk_factors} />
-              </div>
-            )}
-            {final.recommended_frameworks.length > 0 && (
-              <div className="mt-4">
-                <p className="mb-2 text-xs font-medium text-foreground/60">Compliance frameworks</p>
-                <ChipList items={final.recommended_frameworks} />
               </div>
             )}
           </Card>
@@ -187,7 +313,12 @@ export function ReviewDetail() {
           </div>
 
           <Card title="Deterministic rules that fired" icon={<ListChecks size={16} />}>
-            {review.rules_fired.length === 0 ? (
+            {!review.rule_engine_enabled ? (
+              <p className="text-sm text-foreground/60">
+                The rule engine was <strong>disabled</strong> for this review — the verdict is based
+                purely on the LLM analysis of the facts and retrieved context.
+              </p>
+            ) : review.rules_fired.length === 0 ? (
               <p className="text-sm text-foreground/50">No rules matched.</p>
             ) : (
               <ul className="space-y-3">
@@ -198,6 +329,11 @@ export function ReviewDetail() {
                       <span className="ml-2 rounded-full bg-border/60 px-2 py-0.5 font-mono text-[10px] uppercase text-foreground/60">
                         {r.test_level}
                       </span>
+                      {r.cap && (
+                        <span className="ml-2 rounded-full border border-warning/40 bg-warning/10 px-2 py-0.5 font-mono text-[10px] uppercase text-warning">
+                          caps at {r.cap}
+                        </span>
+                      )}
                     </p>
                     <p className="mt-1 text-xs text-foreground/70">{r.reasoning}</p>
                   </li>
@@ -224,6 +360,30 @@ export function ReviewDetail() {
             )}
           </Card>
 
+          <Card title="Extracted form selections" icon={<ListChecks size={16} />}>
+            {review.form_fields.length === 0 ? (
+              <p className="text-sm text-foreground/50">
+                No form selections were detected in the uploaded PDFs.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {review.form_fields.map((f, i) => (
+                  <li key={i} className="rounded-lg border border-border bg-muted/40 p-3">
+                    <p className="text-sm font-medium">{f.label || '(unnamed field)'}</p>
+                    <p className="mt-1 text-xs text-foreground/70">
+                      <span className="font-semibold text-accent">
+                        Selected: {f.selected.join(', ')}
+                      </span>
+                      {f.options.length > 0 && (
+                        <span className="text-foreground/50"> · options: {f.options.join(' | ')}</span>
+                      )}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
           {/* Human override */}
           <Card title="Final decision (human override)" icon={<GearSix size={16} />}>
             <div className="flex flex-wrap items-center gap-4">
@@ -243,7 +403,7 @@ export function ReviewDetail() {
                 Pentest required
               </label>
               <div className="flex items-center gap-2">
-                {(['dast', 'pentest', 'both', 'none'] as TestLevel[]).map((level) => (
+                {(['dast', 'pentest', 'none'] as TestLevel[]).map((level) => (
                   <button
                     key={level}
                     disabled={!overriding}
@@ -251,7 +411,7 @@ export function ReviewDetail() {
                       setOverride((o) => ({
                         ...(o ?? final),
                         test_level: level,
-                        requires_pentest: level === 'pentest' || level === 'both',
+                        requires_pentest: level === 'pentest',
                       }))
                     }
                     className={`rounded-lg border px-3 py-1.5 font-mono text-xs uppercase transition-colors ${

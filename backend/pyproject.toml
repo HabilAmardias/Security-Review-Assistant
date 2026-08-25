@@ -10,6 +10,7 @@ dependencies = [
     "httpx>=0.28.1",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.15.0",
+    "pymupdf>=1.28.2",
     "pypdf>=6.16.1",
     "python-multipart>=0.0.32",
     "pyyaml>=6.0.3",
@@ -38,4 +39,5 @@ filterwarnings = [
     "ignore:.*cannot collect test class 'TestLevel'.*:pytest.PytestCollectionWarning",
     "ignore:.*asyncio.iscoroutinefunction.*:DeprecationWarning",
     "ignore:.*telemetry.*:DeprecationWarning",
+    "ignore:.*has no __module__.*:DeprecationWarning",
 ]

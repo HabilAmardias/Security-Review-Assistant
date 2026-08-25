@@ -6,7 +6,7 @@ application needs a **penetration test or only DAST** — with reasoning and a s
 It takes an **FRD** (Functional Requirements Document) and an **NFRD** (Non-Functional
 Requirements Document) and returns:
 
-1. **Is a pentest needed, or is DAST sufficient?** (`pentest | dast | both | none`)
+1. **Is a pentest needed, or is DAST sufficient?** (`pentest | dast | none`)
 2. **Reasoning** — citing the data classes, your SOP/policy rules that fired, and the relevant
    previous security reviews that were retrieved.
 3. **Scope** — in/out of scope components, test methods, environments, and effort estimate.
@@ -32,6 +32,14 @@ audit logging).
 - **Auditable decisions** — deterministic rule engine (config-driven) + LLM reasoning. Every review
   stores the extracted facts, retrieved sources, rules fired, the LLM decision, and any
   rule-vs-LLM **conflicts** that need a human call.
+- **Form-field extraction (Confluence radio/checkbox grids)** — PyMuPDF reads font colours in the
+  review PDFs and deterministically detects which option is *selected* in fields. Selections
+  are shown in the report and used to ground the facts.
+- **Deterministic exposure + human confirmation** — app exposure (intranet / internet-facing /
+  partner) is resolved by *human override → PDF form field → LLM*; when it can't be determined, the
+  UI asks you to confirm it so the exposure rules fire correctly.
+- **Enforced intranet cap** — an intranet app's final verdict is clamped to **DAST** even if the LLM
+  recommends pentest (the LLM's recommendation stays visible as a conflict; you can still override).
 - **Web UI** — Vite + React (Trust & Authority design, dark/light mode), Knowledge Base,
   New Review, Review Detail, History, and Settings pages.
 - **Layered, unit-testable backend** — `controller → usecase → repository → data`, dependency
@@ -55,7 +63,7 @@ audit logging).
 ├───────────────────────────────────┴───────────────────────────┤
 │  Storage: data/dropbox, data/extracted, data/chroma, app.db   │
 └───────────────────────────────────────────────────────────────┘
-        Ollama: qwen2.5:7b (reasoning) + qwen3-embedding (embeddings)
+        Ollama: gemma (reasoning) + gemma-embedding (embeddings)
 ```
 
 ### Backend layers (`backend/src/ase_security_review/`)
@@ -79,6 +87,9 @@ audit logging).
 - **Ollama** installed and running (`ollama serve`)
 - Optional: **Tesseract** for OCR of scanned PDFs
   (`brew install tesseract tesseract-lang`)
+
+> `uv sync` installs everything automatically, including **PyMuPDF** (used to read form-field
+> selections from Confluence PDF exports).
 
 ---
 
@@ -141,7 +152,7 @@ mode: `auto` / `text` / `ocr`).
 
 ### Run a review
 
-1. Open **New Review**, upload the **FRD** and **NFRD** PDFs (add passwords if locked).
+1. Open **New Review**, upload the **FRD** and **NFRD** (PDF, Markdown, or TXT; add a password if a PDF is locked).
 2. The agent: extracts structured facts → retrieves your SOP/policy/precedent → fires rules →
    produces a JSON decision → checks for conflicts with the rules.
 3. Open the review to see the **verdict**, **reasoning**, **scope**, fired rules, and retrieved
@@ -153,7 +164,7 @@ mode: `auto` / `text` / `ocr`).
 ```jsonc
 {
   "requires_pentest": true,
-  "test_level": "both",                 // pentest | dast | both | none
+  "test_level": "pentest",              // pentest | dast | none
   "classification_reason": "...",       // cites data classes, fired rules, retrieved sources
   "risk_factors": ["..."],
   "scope": {
@@ -162,8 +173,7 @@ mode: `auto` / `text` / `ocr`).
     "test_methods": ["OWASP ASVS L2", "API scanning", "manual authz testing"],
     "environments": ["staging pre-release"],
     "effort_estimate": "3-5 person-days"
-  },
-  "recommended_frameworks": ["pci_dss", "owasp_asvs"]
+  }
 }
 ```
 
@@ -177,7 +187,15 @@ mode: `auto` / `text` / `ocr`).
 llm:
   base_url: "http://127.0.0.1:11434"
   reasoning_model: "qwen2.5:7b-instruct-q4_K_M"   # change freely
-  embedding_model: "qwen3-embedding:0.6b"          # change freely
+  embedding_model: "qwen3-embedding:0.6b"          # change freely; must match embedding_dim
+  embedding_dim: 1024                              # output size of the embedding model
+  num_ctx: 16384        # context window; Ollama's 4096 default truncates long reviews
+  enable_thinking: false  # keep false for JSON output; qwen3.x can burn tokens on reasoning
+```
+
+> Changing the embedding model: update `embedding_dim` to the new model's output size. On the next
+> restart the vector index is rebuilt automatically from the cached plaintext (no PDFs or passwords
+> needed), or use the **Rebuild index** button on the Knowledge Base page.
 
 extraction:
   default_mode: "auto"        # auto | text | ocr
@@ -195,11 +213,15 @@ review_max_input_chars: 60000 # per-doc input budget for the reasoning LLM
 
 ### `backend/config/compliance.yaml`
 
-- **`compliance.enabled`** — the frameworks the agent cites (OWASP ASVS/API, NIST SSDF/SP 800-53,
-  PCI DSS, ISO 27001, SOC 2, GDPR, HIPAA, UU PDP, POJK).
-- **`compliance.rules`** — the deterministic rule engine. Each rule matches on `data_classes`,
-  `keywords`, and/or `features` extracted from the FRD/NFRD and mandates a `test_level`
-  (`pentest | dast | both | none`). Fired rules are shown in every report.
+- **`compliance.rules`** — the deterministic rule engine. Only the two exposure-based decision
+  rules are defined:
+  - **R-06** internet/public-facing → `dast` floor (whether a pentest is also needed is left to the
+    review analysis — the LLM can recommend `pentest`, which then surfaces as a rule-vs-LLM conflict
+    for a human to confirm).
+  - **R-11** intranet/internal-only → `dast` with `cap: dast` (intranet is always DAST-only, even if
+    the LLM suggests pentest).
+  Each rule matches on `data_classes`, `keywords`, `features`, and/or `exposure` extracted from the
+  FRD/NFRD and mandates a `test_level` (`pentest | dast | none`). Fired rules are shown in every report.
 
 ---
 
@@ -221,15 +243,16 @@ review_max_input_chars: 60000 # per-doc input budget for the reasoning LLM
 |---|---|---|
 | GET | `/api/health` | Ollama status, models, indexed chunk count |
 | GET | `/api/models` | Available models + configured models |
-| GET | `/api/frameworks` | Enabled compliance frameworks |
 | GET/POST | `/api/documents` | List / upload knowledge-base documents |
 | POST | `/api/documents/rescan` | Trigger a drop-folder scan |
 | POST | `/api/documents/{id}/unlock` | Unlock a password-protected PDF (in-memory only) |
 | POST | `/api/documents/{id}/ocr` | Run OCR on a scanned document |
 | GET | `/api/documents/{id}/progress` | Ingestion status for one document |
 | DELETE | `/api/documents/{id}` | Remove a document + its chunks |
-| POST | `/api/reviews` | Upload FRD+NFRD and start a review |
+| POST | `/api/reviews` | Upload FRD+NFRD (PDF/MD/TXT) and start a review; optional `exposure` form field |
 | GET | `/api/reviews` / `/api/reviews/{id}` | Review history / detail (audit trail) |
+| PATCH | `/api/reviews/{id}/exposure` | Confirm/override the app exposure (recomputes rules) |
+| DELETE | `/api/reviews/{id}` | Delete a review from history |
 | PATCH | `/api/reviews/{id}/decision` | Set the human final decision |
 
 ---
@@ -252,7 +275,7 @@ Test fixtures (`tests/fixtures/make_pdf.py`) generate plain and password-protect
 ```
 backend/
   config/config.yaml            # model + tuning configuration
-  config/compliance.yaml        # frameworks + deterministic rules
+  config/compliance.yaml        # deterministic decision rules
   src/ase_security_review/
     main.py                     # FastAPI app (serves built frontend too)
     di.py                       # dependency injection container

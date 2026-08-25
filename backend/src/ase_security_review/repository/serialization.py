@@ -2,8 +2,28 @@
 
 from __future__ import annotations
 
-from ..domain.enums import TestLevel
-from ..domain.models import Conflict, FiredRule, Review, Scope, SecurityDecision
+from ..domain.enums import parse_test_level
+from ..domain.models import Conflict, FiredRule, FormField, Review, Scope, SecurityDecision
+
+
+def form_field_to_dict(f: FormField) -> dict:
+    return {
+        "label": f.label,
+        "options": f.options,
+        "selected": f.selected,
+        "source_line": f.source_line,
+        "page": f.page,
+    }
+
+
+def form_field_from_dict(data: dict) -> FormField:
+    return FormField(
+        label=data.get("label") or "",
+        options=list(data.get("options") or []),
+        selected=list(data.get("selected") or []),
+        source_line=data.get("source_line") or "",
+        page=int(data.get("page") or 1),
+    )
 
 
 def scope_to_dict(scope: Scope) -> dict:
@@ -34,24 +54,18 @@ def decision_to_dict(d: SecurityDecision) -> dict:
         "classification_reason": d.classification_reason,
         "risk_factors": d.risk_factors,
         "scope": scope_to_dict(d.scope),
-        "recommended_frameworks": d.recommended_frameworks,
     }
 
 
 def decision_from_dict(data: dict | None) -> SecurityDecision | None:
     if not data:
         return None
-    try:
-        level = TestLevel(data.get("test_level", "dast"))
-    except ValueError:
-        level = TestLevel.DAST
     return SecurityDecision(
         requires_pentest=bool(data.get("requires_pentest", False)),
-        test_level=level,
+        test_level=parse_test_level(data.get("test_level")),
         classification_reason=data.get("classification_reason") or "",
         risk_factors=list(data.get("risk_factors") or []),
         scope=scope_from_dict(data.get("scope")),
-        recommended_frameworks=list(data.get("recommended_frameworks") or []),
     )
 
 
@@ -62,7 +76,6 @@ def fired_rule_to_dict(r: FiredRule) -> dict:
         "test_level": r.test_level.value,
         "priority": r.priority,
         "reasoning": r.reasoning,
-        "frameworks": r.frameworks,
     }
 
 
@@ -70,10 +83,9 @@ def fired_rule_from_dict(data: dict) -> FiredRule:
     return FiredRule(
         id=data.get("id", ""),
         name=data.get("name", ""),
-        test_level=TestLevel(data.get("test_level", "dast")),
+        test_level=parse_test_level(data.get("test_level", "dast")),
         priority=data.get("priority", "medium"),
         reasoning=data.get("reasoning", ""),
-        frameworks=list(data.get("frameworks") or []),
     )
 
 

@@ -6,15 +6,14 @@ from typing import Any
 
 from ..config.settings import RuleConfig
 from .enums import TestLevel
-from .models import FiredRule
+from .models import FiredRule, SecurityDecision
 
-_LEVEL_RANK = {"none": 0, "dast": 1, "pentest": 2, "both": 3}
+_LEVEL_RANK = {"none": 0, "dast": 1, "pentest": 2}
 _PRIORITY_RANK = {"low": 1, "medium": 2, "high": 3}
 
 _TEST_LEVEL_BY_NAME = {
     "pentest": TestLevel.PENTEST,
     "dast": TestLevel.DAST,
-    "both": TestLevel.BOTH,
     "none": TestLevel.NONE,
 }
 
@@ -41,6 +40,7 @@ def evaluate_facts(facts: dict[str, Any], rules: list[RuleConfig]) -> list[Fired
     fired: list[FiredRule] = []
     data_classes = {str(d).lower() for d in (facts.get("data_classes") or [])}
     features = [str(f).lower() for f in (facts.get("features") or [])]
+    exposure = str(facts.get("exposure") or "").lower()
     text = facts_text(facts)
 
     for rule in rules:
@@ -62,6 +62,9 @@ def evaluate_facts(facts: dict[str, Any], rules: list[RuleConfig]) -> list[Fired
                 any(tok in feat for tok in tr.features) for feat in features
             )
 
+        if not matched and tr.exposure:
+            matched = exposure in {e.lower() for e in tr.exposure}
+
         if matched:
             fired.append(
                 FiredRule(
@@ -70,7 +73,7 @@ def evaluate_facts(facts: dict[str, Any], rules: list[RuleConfig]) -> list[Fired
                     test_level=_TEST_LEVEL_BY_NAME.get(rule.action.test_level, TestLevel.DAST),
                     priority=rule.action.priority,
                     reasoning=rule.reasoning,
-                    frameworks=list(rule.frameworks),
+                    cap=_TEST_LEVEL_BY_NAME.get(rule.action.cap) if rule.action.cap else None,
                 )
             )
 
@@ -78,12 +81,42 @@ def evaluate_facts(facts: dict[str, Any], rules: list[RuleConfig]) -> list[Fired
 
 
 def aggregate_test_level(fired: list[FiredRule]) -> TestLevel | None:
-    """Return the strongest required test level from fired rules."""
+    """Return the strongest required test level from fired rules, clamped by any
+    caps declared on the fired rules (e.g. intranet apps cap at DAST)."""
     if not fired:
         return None
     best = max(fired, key=lambda r: (_LEVEL_RANK[r.test_level.value], _PRIORITY_RANK.get(r.priority, 0)))
-    return best.test_level
+    level = best.test_level
+
+    caps = [r.cap for r in fired if r.cap is not None]
+    if caps:
+        most_restrictive = min(caps, key=lambda c: _LEVEL_RANK[c.value])
+        if _LEVEL_RANK[most_restrictive.value] < _LEVEL_RANK[level.value]:
+            level = most_restrictive
+    return level
 
 
 def pentest_required(test_level: TestLevel | None) -> bool:
-    return test_level in (TestLevel.PENTEST, TestLevel.BOTH)
+    return test_level == TestLevel.PENTEST
+
+
+def apply_cap(decision: SecurityDecision, fired: list[FiredRule]) -> SecurityDecision:
+    """Clamp a decision to the most restrictive cap declared by the fired rules
+    (e.g. the intranet rule caps the overall requirement at DAST)."""
+    caps = [r.cap for r in fired if r.cap is not None]
+    if not caps:
+        return decision
+    cap = min(caps, key=lambda c: _LEVEL_RANK[c.value])
+    if _LEVEL_RANK[decision.test_level.value] <= _LEVEL_RANK[cap.value]:
+        return decision
+    note = (
+        f" [NOTE: the LLM recommended {decision.test_level.value}, but the deterministic "
+        f"rule engine caps this application at {cap.value}; final decision clamped.]"
+    )
+    return SecurityDecision(
+        requires_pentest=pentest_required(cap),
+        test_level=cap,
+        classification_reason=(decision.classification_reason + note).strip(),
+        risk_factors=list(decision.risk_factors),
+        scope=decision.scope,
+    )

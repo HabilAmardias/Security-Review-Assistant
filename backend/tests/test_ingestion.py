@@ -61,6 +61,52 @@ def test_unlock_and_reindex_without_password(container, sample_pdf: Path):
     assert again.status == DocStatus.READY
 
 
+def test_reindex_all_rebuilds_from_plaintext(container, sample_pdf: Path):
+    doc = container.ingestion.register_file(sample_pdf, DocType.SOP)
+    doc = container.ingestion.index_document(doc.id)
+    assert container.vectors.count() == doc.chunk_count
+
+    result = container.ingestion.reindex_all()
+    assert result["reindexed"] >= 1
+    assert container.documents.get(doc.id).status == DocStatus.READY
+    assert container.vectors.count() == container.documents.get(doc.id).chunk_count
+
+
+def test_reindex_skips_docs_without_plaintext(container, sample_pdf: Path):
+    locked = encrypt_pdf(sample_pdf, sample_pdf.parent / "locked2.pdf", "pw")
+    locked_doc = container.ingestion.register_file(locked, DocType.SOP)
+    locked_doc = container.ingestion.index_document(locked_doc.id)
+    assert locked_doc.status == DocStatus.NEEDS_PASSWORD
+
+    result = container.ingestion.reindex_all()
+    assert result["reindexed"] == 0
+    assert any(s["id"] == locked_doc.id for s in result["skipped"])
+
+
+def test_dimension_mismatch_detection(container, sample_pdf: Path):
+    container.ingestion.register_file(sample_pdf, DocType.SOP)
+    doc = container.ingestion.index_document(container.documents.list()[0].id)
+    assert container.vectors.count() > 0
+    stored_dim = len(container.vectors._embs[next(iter(container.vectors._embs))])
+    assert container.vectors.dimension_matches(stored_dim) is True
+    assert container.vectors.dimension_matches(stored_dim + 8) is False
+
+
+def test_index_failure_captures_error(container, sample_pdf: Path):
+    fake = container.ingestion._llm
+
+    def boom(texts):
+        raise RuntimeError("embed boom")
+
+    fake.embed = boom
+    doc = container.ingestion.register_file(sample_pdf, DocType.SOP)
+    with pytest.raises(RuntimeError):
+        container.ingestion.index_document(doc.id)
+    failed = container.documents.get(doc.id)
+    assert failed.status == DocStatus.FAILED
+    assert failed.error == "embed boom"
+
+
 def test_auto_mode_flags_needs_ocr_for_image_like_pdf(container, tmp_path: Path):
     # a PDF with almost no text should be flagged NEEDS_OCR in auto mode
     from reportlab.lib.pagesizes import A4

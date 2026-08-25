@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ..domain.models import Document, Review
+from ..repository.serialization import form_field_to_dict
 
 
 def document_to_dict(doc: Document) -> dict:
@@ -29,6 +30,10 @@ def review_to_dict(review: Review, include_texts: bool = False) -> dict:
         "frd_name": review.frd_name,
         "nfrd_name": review.nfrd_name,
         "facts": review.facts,
+        "rule_engine_enabled": review.rule_engine_enabled,
+        "detected_exposure": review.detected_exposure,
+        "exposure_override": review.exposure_override,
+        "form_fields": [form_field_to_dict(f) for f in review.form_fields],
         "retrieved_sources": review.retrieved_sources,
         "rules_fired": [r.__dict__ for r in review.rules_fired],
         "rule_test_level": review.rule_test_level.value if review.rule_test_level else None,
@@ -60,5 +65,4 @@ def decision_to_dict(decision) -> dict | None:
             "environments": decision.scope.environments,
             "effort_estimate": decision.scope.effort_estimate,
         },
-        "recommended_frameworks": decision.recommended_frameworks,
     }

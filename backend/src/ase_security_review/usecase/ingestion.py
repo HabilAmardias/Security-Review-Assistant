@@ -135,6 +135,23 @@ class IngestionUseCase:
             Path(doc.plaintext_path).unlink(missing_ok=True)
         self._docs.delete(doc_id)
 
+    def reindex_all(self) -> dict:
+        """Rebuild the whole vector index from the plaintext cache. Used when the
+        embedding model (and thus the vector dimension) changes: the old index is
+        reset, then every document with a cached plaintext is re-chunked and
+        re-embedded with the current model. No PDFs or passwords are needed."""
+        self._vectors.reset_collection()
+        docs = self._docs.list()
+        ok = 0
+        skipped: list[dict] = []
+        for doc in docs:
+            if doc.plaintext_path and Path(doc.plaintext_path).exists():
+                self._index_text(doc, load_plaintext(Path(doc.plaintext_path)))
+                ok += 1
+            else:
+                skipped.append({"id": doc.id, "name": doc.name, "status": doc.status.value})
+        return {"reindexed": ok, "skipped": skipped}
+
     # ---- internals --------------------------------------------------------
 
     def _is_locked(self, path: Path) -> bool:
@@ -220,8 +237,8 @@ class IngestionUseCase:
             doc.chunk_count = len(chunks)
             self._set_status(doc, DocStatus.READY)
             return doc
-        except Exception:
-            self._set_status(doc, DocStatus.FAILED)
+        except Exception as exc:
+            self._set_status(doc, DocStatus.FAILED, error=str(exc))
             raise
 
     def _set_status(self, doc: Document, status: DocStatus, error: str | None = None) -> Document:

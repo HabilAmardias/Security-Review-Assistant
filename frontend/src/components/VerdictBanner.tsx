@@ -6,11 +6,6 @@ const LEVEL_META: Record<TestLevel, { label: string; cls: string; hint: string }
     cls: 'border-destructive/40 bg-destructive/10 text-destructive',
     hint: 'Manual pentest needed',
   },
-  both: {
-    label: 'Pentest + DAST required',
-    cls: 'border-destructive/40 bg-destructive/10 text-destructive',
-    hint: 'Full security testing',
-  },
   dast: {
     label: 'DAST scan required',
     cls: 'border-warning/40 bg-warning/10 text-warning',
@@ -39,14 +34,7 @@ export function VerdictBanner({
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <span
-            className={`h-3 w-3 rounded-full ${
-              decision.test_level === 'dast' || decision.test_level === 'none'
-                ? 'bg-current'
-                : 'bg-current'
-            }`}
-            aria-hidden
-          />
+          <span className="h-3 w-3 rounded-full bg-current" aria-hidden />
           <h2 className="text-xl font-bold">{meta.label}</h2>
           {overridden && (
             <span className="rounded-full border border-border bg-background px-2.5 py-0.5 text-xs text-foreground/70">

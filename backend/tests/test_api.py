@@ -19,12 +19,10 @@ def test_health(container):
         assert res.json()["status"] == "ok"
 
 
-def test_frameworks(container):
+def test_frameworks_endpoint_removed(container):
     with _client(container) as client:
         res = client.get("/api/frameworks")
-        assert res.status_code == 200
-        data = res.json()
-        assert any(f["key"] == "owasp_asvs" for f in data)
+        assert res.status_code == 404
 
 
 def test_upload_index_unlock_flow(container, sample_pdf):
@@ -68,6 +66,7 @@ def test_create_review(container):
     )
 
     with _client(container) as client:
+        # Non-PDF content named .pdf is detected by content and decoded as text.
         frd = b"FRD text with payment data and OAuth authentication"
         nfrd = b"NFRD internet-facing portal, PII data, POJK compliance"
         res = client.post(
@@ -77,7 +76,8 @@ def test_create_review(container):
                 "nfrd": ("nfrd.pdf", nfrd, "application/pdf"),
             },
         )
-        assert res.status_code == 400  # PDFs with fake content cannot be parsed
+        assert res.status_code == 200
+        assert res.json()["frd_name"] == "frd.pdf"
 
         # text-based inputs via temp files are not PDFs -> decode path
         res = client.post(
@@ -97,6 +97,110 @@ def test_create_review(container):
         assert client.get("/api/reviews").json()
 
 
+def test_delete_review(container):
+    from ase_security_review.domain.enums import ReviewStatus
+
+    review = container.review_usecase.create_review("f.pdf", "text", "n.pdf", "text")
+    with _client(container) as client:
+        res = client.delete(f"/api/reviews/{review.id}")
+        assert res.status_code == 200
+        assert client.get(f"/api/reviews/{review.id}").status_code == 404
+        # deleting again -> 404
+        assert client.delete(f"/api/reviews/{review.id}").status_code == 404
+
+
+def test_create_review_with_markdown(container):
+    with _client(container) as client:
+        frd_md = b"# FRD\n\n## Features\n1. OAuth2 login\n2. Payment checkout"
+        nfrd_md = b"# NFRD\n\n- Internet-facing\n- PCI DSS"
+        res = client.post(
+            "/api/reviews",
+            files={
+                "frd": ("frd.md", frd_md, "text/markdown"),
+                "nfrd": ("nfrd.md", nfrd_md, "text/markdown"),
+            },
+        )
+        assert res.status_code == 200
+        review = client.get(f"/api/reviews/{res.json()['id']}").json()
+        assert "# FRD" in review["frd_text"]
+        assert "PCI DSS" in review["nfrd_text"]
+
+
+def test_text_named_pdf_is_decoded_as_text(container):
+    # content decides parsing, not the filename
+    with _client(container) as client:
+        res = client.post(
+            "/api/reviews",
+            files={
+                "frd": ("frd.pdf", b"# Not a real pdf, just markdown", "text/plain"),
+                "nfrd": ("nfrd.txt", b"# NFRD plain text", "text/plain"),
+            },
+        )
+        assert res.status_code == 200
+        review = client.get(f"/api/reviews/{res.json()['id']}").json()
+        assert "Not a real pdf" in review["frd_text"]
+
+
+def test_real_pdf_named_md_is_parsed_as_pdf(container, sample_pdf):
+    with _client(container) as client:
+        payload = sample_pdf.read_bytes()
+        res = client.post(
+            "/api/reviews",
+            files={
+                "frd": ("frd.md", payload, "text/markdown"),
+                "nfrd": ("nfrd.txt", b"# NFRD", "text/plain"),
+            },
+        )
+        assert res.status_code == 200
+        review = client.get(f"/api/reviews/{res.json()['id']}").json()
+        assert "Pentest Selection SOP" in review["frd_text"]
+
+
+def test_markdown_bom_is_stripped(container):
+    with _client(container) as client:
+        frd_md = b"\xef\xbb\xbf# FRD with BOM\n- feature"
+        res = client.post(
+            "/api/reviews",
+            files={
+                "frd": ("frd.md", frd_md, "text/markdown"),
+                "nfrd": ("nfrd.txt", b"# NFRD", "text/plain"),
+            },
+        )
+        assert res.status_code == 200
+        review = client.get(f"/api/reviews/{res.json()['id']}").json()
+        assert not review["frd_text"].startswith("\ufeff")
+        assert review["frd_text"].startswith("# FRD")
+
+
+def test_update_exposure_patch(container):
+    review = container.review_usecase.create_review(
+        "f.pdf", "Payment checkout.", "n.pdf", "Portal.", detected_exposure="internet-facing"
+    )
+    review = container.review_usecase.run_review(review.id)
+    with _client(container) as client:
+        res = client.patch(f"/api/reviews/{review.id}/exposure", json={"exposure": "internal"})
+        assert res.status_code == 200
+        body = res.json()
+        assert body["exposure_override"] == "internal"
+        assert body["facts"]["exposure"] == "internal"
+
+        # clearing the override
+        res = client.patch(f"/api/reviews/{review.id}/exposure", json={"exposure": None})
+        assert res.status_code == 200
+        assert res.json()["exposure_override"] is None
+        # back to detected exposure
+        assert res.json()["facts"]["exposure"] == "internet-facing"
+
+
+def test_mark_stale_running_failed(container):
+    review = container.review_usecase.create_review("f.pdf", "text", "n.pdf", "text")
+    assert container.reviews.get(review.id).status.value == "running"
+    assert container.reviews.mark_stale_running_failed() >= 1
+    stale = container.reviews.get(review.id)
+    assert stale.status.value == "failed"
+    assert "restart" in stale.error
+
+
 def test_set_final_decision(container):
     review = container.review_usecase.create_review("f.pdf", "text", "n.pdf", "text")
     with _client(container) as client:
@@ -106,7 +210,6 @@ def test_set_final_decision(container):
             "classification_reason": "human override",
             "risk_factors": [],
             "scope": {"in_scope": ["web"]},
-            "recommended_frameworks": ["owasp_asvs"],
         }
         res = client.patch(f"/api/reviews/{review.id}/decision", json=payload)
         assert res.status_code == 200

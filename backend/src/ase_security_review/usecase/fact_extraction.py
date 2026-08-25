@@ -3,13 +3,11 @@ used for retrieval queries and rule evaluation."""
 
 from __future__ import annotations
 
-import json
-
 from pydantic import ValidationError
 
 from ..config.settings import AppConfig
 from ..repository.base import LlmPort
-from .llm_schemas import FactsModel
+from .llm_schemas import FactsModel, parse_json_object
 
 _FACT_SYSTEM = """You are a security requirements analyst. You read a Functional Requirements Document (FRD) and a Non-Functional Requirements Document (NFRD) for a software application and extract a structured security-relevant profile.
 
@@ -17,7 +15,10 @@ Respond ONLY with valid JSON matching this exact schema:
 {
   "app_name": string,
   "app_type": "web" | "mobile" | "api" | "desktop" | "internal" | "other",
-  "exposure": "internet-facing" | "internal" | "partner",
+  "exposure": "internet-facing" | "internal" | "partner" | "unclear",
+  "exposure_evidence": string,        // the exact sentence/field that states the exposure; "" if not stated
+  "change_scope": "full_new_app" | "feature_change" | "infra_config_change" | "other",
+  "change_scope_evidence": string,    // quote the FRD sentence describing the scope of this change; "" if none
   "technologies": [string],          // frameworks, languages, DBs mentioned
   "data_classes": [string],          // subset of: payment, pii, phi, financial, credentials, none
   "features": [string],              // semantic tags, subset of: authentication, authorization, sso, mfa, integration, webhook, internet-facing, internal, compliance, admin, audit, file-upload
@@ -30,7 +31,11 @@ Respond ONLY with valid JSON matching this exact schema:
   "summary": string                  // 2-4 sentence security-relevant summary
 }
 
-The documents may be in English, Indonesian, or mixed. Analyze them regardless of language. Omit no fields; use empty arrays or empty strings where unknown.
+Rules:
+- For "exposure", base it ONLY on an explicit statement in the documents (e.g. "the app is on the intranet", "internet-facing", "only accessible from the corporate network"). Quote it in "exposure_evidence".
+- If the documents only LIST exposure options (e.g. a form that shows "Internet / External / Intranet / Lainnya") without making the selected value clear in text, set "exposure" to "unclear" and "exposure_evidence" to the option list. NEVER guess which option was selected.
+- For "change_scope", decide whether the FRD describes building a brand-new application ("full_new_app"), adding a feature/change to an existing application ("feature_change"), or only infrastructure/configuration changes that explicitly do NOT affect business logic or data processing ("infra_config_change"). Quote the exact FRD sentence stating the scope (e.g. that business logic / business process is unaffected) in "change_scope_evidence".
+- The documents may be in English, Indonesian, or mixed. Analyze them regardless of language. Omit no fields; use empty arrays or empty strings where unknown.
 """
 
 
@@ -47,7 +52,12 @@ class FactExtractionService:
         half = budget // 2
         return text[:half] + "\n...[truncated]...\n" + text[-half:]
 
-    def extract(self, frd_text: str, nfrd_text: str) -> FactsModel:
+    def extract(
+        self,
+        frd_text: str,
+        nfrd_text: str,
+        form_fields: list | None = None,
+    ) -> FactsModel:
         budget = self._config.review_max_input_chars // 2
         prompt = (
             "=== FUNCTIONAL REQUIREMENTS DOCUMENT (FRD) ===\n"
@@ -55,17 +65,25 @@ class FactExtractionService:
             "=== NON-FUNCTIONAL REQUIREMENTS DOCUMENT (NFRD) ===\n"
             f"{self._truncate(nfrd_text, budget)}"
         )
-        raw = self._llm.generate(prompt, system=_FACT_SYSTEM, format="json")
+        if form_fields:
+            block = "\n".join(
+                f"- {f.label or '(field)'}: selected = {', '.join(f.selected) or '(none)'}"
+                for f in form_fields
+            )
+            prompt = (
+                "=== SELECTED FORM FIELDS DETECTED FROM THE PDF (authoritative) ===\n"
+                f"{block}\n\n{prompt}"
+            )
         last_error: Exception | None = None
-        for _ in range(2):
+        for attempt in range(3):
+            use_format = "json" if attempt < 2 else None
+            raw = self._llm.generate(
+                prompt if attempt == 0 else "Respond ONLY with valid JSON matching the schema.\n\n" + prompt,
+                system=_FACT_SYSTEM,
+                format=use_format,
+            )
             try:
-                return FactsModel.model_validate(json.loads(raw))
-            except (json.JSONDecodeError, ValidationError) as exc:
+                return FactsModel.model_validate(parse_json_object(raw))
+            except (ValueError, ValidationError) as exc:
                 last_error = exc
-                raw = self._llm.generate(
-                    "Your previous response was not valid. Respond ONLY with valid JSON "
-                    "matching the schema.\n\n" + prompt,
-                    system=_FACT_SYSTEM,
-                    format="json",
-                )
         raise ValueError(f"Fact extraction produced invalid JSON: {last_error}") from last_error

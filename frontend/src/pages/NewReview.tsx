@@ -12,6 +12,7 @@ export function NewReview() {
   const [nfrd, setNfrd] = useState<File | null>(null)
   const [frdPw, setFrdPw] = useState('')
   const [nfrdPw, setNfrdPw] = useState('')
+  const [exposure, setExposure] = useState('auto')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lockedTarget, setLockedTarget] = useState<{ which: 'frd' | 'nfrd' } | null>(null)
@@ -24,7 +25,13 @@ export function NewReview() {
     setBusy(true)
     setError(null)
     try {
-      const review: Review = await api.createReview(frd, nfrd, pwFrd || undefined, pwNfrd || undefined)
+      const review: Review = await api.createReview(
+        frd,
+        nfrd,
+        pwFrd || undefined,
+        pwNfrd || undefined,
+        exposure,
+      )
       navigate(`/reviews/${review.id}`)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -52,10 +59,15 @@ export function NewReview() {
       <div className="grid gap-6 md:grid-cols-2">
         <div>
           <label className="mb-2 block text-sm font-semibold">Functional Requirements (FRD)</label>
-          <Dropzone label="Drop FRD here" onFile={setFrd} />
+          <Dropzone
+            label="Drop FRD here"
+            accept=".pdf,.md,.markdown,.txt"
+            hint="PDF, Markdown, or TXT · click to browse or drop"
+            onFile={setFrd}
+          />
           <div className="mt-2">
             <label className="mb-1 block text-xs font-medium text-foreground/60">
-              Password <span className="font-normal">(if locked)</span>
+              Password <span className="font-normal">(locked PDF only)</span>
             </label>
             <input
               type="password"
@@ -68,10 +80,15 @@ export function NewReview() {
         </div>
         <div>
           <label className="mb-2 block text-sm font-semibold">Non-Functional Requirements (NFRD)</label>
-          <Dropzone label="Drop NFRD here" onFile={setNfrd} />
+          <Dropzone
+            label="Drop NFRD here"
+            accept=".pdf,.md,.markdown,.txt"
+            hint="PDF, Markdown, or TXT · click to browse or drop"
+            onFile={setNfrd}
+          />
           <div className="mt-2">
             <label className="mb-1 block text-xs font-medium text-foreground/60">
-              Password <span className="font-normal">(if locked)</span>
+              Password <span className="font-normal">(locked PDF only)</span>
             </label>
             <input
               type="password"
@@ -85,6 +102,37 @@ export function NewReview() {
       </div>
 
       {error && <p className="mt-4 text-sm text-destructive">{error}</p>}
+
+      <div className="mt-6 rounded-xl border border-border bg-background p-4">
+        <label className="mb-1 block text-sm font-medium">App exposure</label>
+        <p className="mb-2 text-xs text-foreground/50">
+          The pipeline auto-detects this from the PDF form. Choose explicitly to override or when
+          the document doesn't encode it.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {(
+            [
+              ['auto', 'Auto-detect'],
+              ['internal', 'Intranet'],
+              ['internet-facing', 'Internet-facing'],
+              ['partner', 'Partner / External'],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setExposure(value)}
+              className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
+                exposure === value
+                  ? 'border-primary bg-primary/10 font-semibold text-primary'
+                  : 'border-border hover:border-primary/40'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       <div className="mt-6 flex justify-end">
         <button

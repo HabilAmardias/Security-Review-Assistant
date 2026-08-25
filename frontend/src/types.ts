@@ -25,7 +25,7 @@ export interface Document {
   updated_at: string
 }
 
-export type TestLevel = 'pentest' | 'dast' | 'both' | 'none'
+export type TestLevel = 'pentest' | 'dast' | 'none'
 
 export interface Scope {
   in_scope: string[]
@@ -41,7 +41,6 @@ export interface Decision {
   classification_reason: string
   risk_factors: string[]
   scope: Scope
-  recommended_frameworks: string[]
 }
 
 export interface FiredRule {
@@ -50,7 +49,15 @@ export interface FiredRule {
   test_level: TestLevel
   priority: string
   reasoning: string
-  frameworks: string[]
+  cap?: TestLevel | null
+}
+
+export interface FormField {
+  label: string
+  options: string[]
+  selected: string[]
+  source_line: string
+  page: number
 }
 
 export interface Conflict {
@@ -68,6 +75,10 @@ export interface Review {
   frd_name: string
   nfrd_name: string
   facts: Record<string, unknown> | null
+  rule_engine_enabled: boolean
+  detected_exposure: string | null
+  exposure_override: string | null
+  form_fields: FormField[]
   retrieved_sources: string[]
   rules_fired: FiredRule[]
   rule_test_level: TestLevel | null
@@ -81,19 +92,13 @@ export interface Review {
   nfrd_text?: string
 }
 
-export interface Framework {
-  key: string
-  name: string
-  description: string
-  test_level: string
-}
-
 export interface Health {
   status: string
   ollama: boolean
   models: string[]
   reasoning_model: string
   embedding_model: string
+  enable_rule_engine: boolean
   documents_indexed: number
 }
 

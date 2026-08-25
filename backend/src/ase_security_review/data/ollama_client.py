@@ -11,9 +11,11 @@ from ..repository.base import LlmPort
 class OllamaClient(LlmPort):
     def __init__(self, config: LlmConfig):
         self._config = config
+        # httpx accepts None to disable timeouts entirely.
+        timeout = config.request_timeout_sec if config.request_timeout_sec else None
         self._client = httpx.Client(
             base_url=config.base_url.rstrip("/"),
-            timeout=config.request_timeout_sec,
+            timeout=timeout,
         )
 
     def generate(
@@ -23,6 +25,34 @@ class OllamaClient(LlmPort):
         format: str | None = None,
         temperature: float | None = None,
     ) -> str:
+        payload = self._build_payload(prompt, system=system, format=format, temperature=temperature)
+        resp = self._client.post("/api/chat", json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+        if "error" in data:
+            raise RuntimeError(f"Ollama error: {data['error']}")
+        content = data.get("message", {}).get("content", "")
+        if not content:
+            msg = data.get("message", {}) or {}
+            thinking = msg.get("thinking") or ""
+            detail = (
+                f"model consumed all {self._config.max_tokens} output tokens on reasoning "
+                "without producing an answer — set llm.enable_thinking: false (config.yaml)"
+                if data.get("done_reason") == "length"
+                else "no tokens generated"
+            )
+            raise RuntimeError(
+                f"Ollama returned an empty response (model: {self._config.reasoning_model}; {detail})"
+            )
+        return content
+
+    def _build_payload(
+        self,
+        prompt: str,
+        system: str | None = None,
+        format: str | None = None,
+        temperature: float | None = None,
+    ) -> dict:
         messages: list[dict] = []
         if system:
             messages.append({"role": "system", "content": system})
@@ -32,16 +62,16 @@ class OllamaClient(LlmPort):
             "model": self._config.reasoning_model,
             "messages": messages,
             "stream": False,
+            "think": self._config.enable_thinking,
         }
         if format:
             payload["format"] = format
         payload["options"] = {
             "temperature": temperature if temperature is not None else self._config.temperature,
             "num_predict": self._config.max_tokens,
+            "num_ctx": self._config.num_ctx,
         }
-        resp = self._client.post("/api/chat", json=payload)
-        resp.raise_for_status()
-        return resp.json().get("message", {}).get("content", "")
+        return payload
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:

@@ -9,7 +9,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
 from ..domain.models import Scope, SecurityDecision
-from ..domain.enums import TestLevel
+from ..domain.enums import parse_test_level
 from .deps import get_container, run_backend
 from .schemas import review_to_dict
 
@@ -22,27 +22,39 @@ class FinalDecisionRequest(BaseModel):
     classification_reason: str = ""
     risk_factors: list[str] = []
     scope: dict | None = None
-    recommended_frameworks: list[str] = []
 
 
-def _read_text(request: Request, file: UploadFile, password: str | None) -> str:
+class ExposureRequest(BaseModel):
+    exposure: str | None = None  # internal | internet-facing | partner | null (clear override)
+
+
+_PDF_MAGIC = b"%PDF"
+
+
+def _read_upload(request: Request, file: UploadFile, password: str | None):
+    """Read an FRD/NFRD upload. PDFs are detected by content (magic bytes), not the
+    filename extension. Returns (text, form_fields, detected_exposure)."""
     content = file.file.read()
-    ext = Path(file.filename or "input.pdf").suffix.lower()
-    if ext != ".pdf":
-        return content.decode("utf-8", errors="replace")
 
-    c = get_container(request)
-    from pathlib import Path as P
+    if content.startswith(_PDF_MAGIC):
+        c = get_container(request)
+        import tempfile
 
-    import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            pdf_path = Path(tmp) / "input.pdf"
+            pdf_path.write_bytes(content)
+            try:
+                result = c.extraction.extract_text(pdf_path, password=password)
+                form_fields = c.extraction.extract_form_fields(pdf_path, password=password)
+                detected = c.extraction.exposure_from_form_fields(form_fields)
+                return result.text, form_fields, detected
+            except Exception as exc:
+                raise HTTPException(400, f"Could not read PDF '{file.filename}': {exc}") from exc
 
-    with tempfile.TemporaryDirectory() as tmp:
-        pdf_path = P(tmp) / "input.pdf"
-        pdf_path.write_bytes(content)
-        try:
-            return c.extraction.extract_text(pdf_path, password=password).text
-        except Exception as exc:
-            raise HTTPException(400, f"Could not read PDF '{file.filename}': {exc}") from exc
+    # Markdown / plain text: strip a UTF-8 BOM, then decode.
+    if content.startswith(b"\xef\xbb\xbf"):
+        content = content[3:]
+    return content.decode("utf-8", errors="replace"), [], None
 
 
 @router.post("")
@@ -52,19 +64,28 @@ async def create_review(
     nfrd: UploadFile = File(...),
     frd_password: Optional[str] = Form(None),
     nfrd_password: Optional[str] = Form(None),
+    exposure: Optional[str] = Form(None),
 ):
     c = get_container(request)
     try:
-        frd_text = _read_text(request, frd, frd_password)
-        nfrd_text = _read_text(request, nfrd, nfrd_password)
+        frd_text, frd_fields, frd_exposure = _read_upload(request, frd, frd_password)
+        nfrd_text, nfrd_fields, nfrd_exposure = _read_upload(request, nfrd, nfrd_password)
     except Exception as exc:
         raise HTTPException(400, f"Could not read input documents: {exc}") from exc
 
     if not frd_text.strip() or not nfrd_text.strip():
         raise HTTPException(400, "Both FRD and NFRD must contain extractable text")
 
+    form_fields = frd_fields + nfrd_fields
+    detected_exposure = nfrd_exposure or frd_exposure
     review = c.review_usecase.create_review(
-        frd.filename or "frd.pdf", frd_text, nfrd.filename or "nfrd.pdf", nfrd_text
+        frd.filename or "frd.pdf",
+        frd_text,
+        nfrd.filename or "nfrd.pdf",
+        nfrd_text,
+        detected_exposure=detected_exposure,
+        exposure_override=exposure if exposure and exposure != "auto" else None,
+        form_fields=form_fields,
     )
     run_backend(c.review_usecase.run_review, review.id)
     return review_to_dict(review)
@@ -85,13 +106,28 @@ def get_review(review_id: str, request: Request):
     return review_to_dict(review, include_texts=True)
 
 
+@router.delete("/{review_id}")
+def delete_review(review_id: str, request: Request):
+    c = get_container(request)
+    if not c.reviews.get(review_id):
+        raise HTTPException(404, "Review not found")
+    c.reviews.delete(review_id)
+    return {"deleted": review_id}
+
+
+@router.patch("/{review_id}/exposure")
+def update_exposure(review_id: str, body: ExposureRequest, request: Request):
+    c = get_container(request)
+    if not c.reviews.get(review_id):
+        raise HTTPException(404, "Review not found")
+    review = c.review_usecase.update_exposure(review_id, body.exposure)
+    return review_to_dict(review, include_texts=True)
+
+
 @router.patch("/{review_id}/decision")
 def set_final_decision(review_id: str, body: FinalDecisionRequest, request: Request):
     c = get_container(request)
-    try:
-        level = TestLevel(body.test_level)
-    except ValueError as exc:
-        raise HTTPException(400, f"Invalid test_level: {body.test_level}") from exc
+    level = parse_test_level(body.test_level)
 
     scope = body.scope or {}
     decision = SecurityDecision(
@@ -106,7 +142,6 @@ def set_final_decision(review_id: str, body: FinalDecisionRequest, request: Requ
             environments=list(scope.get("environments") or []),
             effort_estimate=scope.get("effort_estimate") or "",
         ),
-        recommended_frameworks=list(body.recommended_frameworks),
     )
     review = c.review_usecase.set_final_decision(review_id, decision)
     return review_to_dict(review, include_texts=True)

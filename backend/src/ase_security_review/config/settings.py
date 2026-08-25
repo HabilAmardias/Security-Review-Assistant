@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import yaml
 from pydantic import BaseModel, Field
@@ -12,7 +12,16 @@ class LlmConfig(BaseModel):
     embedding_dim: int = 1024
     temperature: float = 0.1
     max_tokens: int = 4096
-    request_timeout_sec: int = 300
+    # Context window for the reasoning model (tokens). Ollama's default is only
+    # 4096, which truncates long review prompts and makes the model return empty
+    # or broken output. Raise if your model supports it (qwen3.x supports 32K+).
+    num_ctx: int = 16384
+    # qwen3.x models default to reasoning mode: they may spend the whole token
+    # budget on thinking and return an EMPTY answer. Keep this False for
+    # structured JSON output; set True (and raise max_tokens) to keep reasoning.
+    enable_thinking: bool = False
+    # None disables the timeout entirely; set a value (seconds) to re-enable it.
+    request_timeout_sec: Optional[int] = None
 
 
 class ExtractionConfig(BaseModel):
@@ -21,21 +30,20 @@ class ExtractionConfig(BaseModel):
     ocr_language: str = "eng"  # tesseract language(s), e.g. "eng", "ind", "eng+ind"
 
 
-class FrameworkConfig(BaseModel):
-    name: str
-    description: str = ""
-    test_level: str = "both"  # hint: pentest | dast | both
-
-
 class RuleTriggerConfig(BaseModel):
     data_classes: list[str] = []
     keywords: list[str] = []
     features: list[str] = []
+    # Matches the structured `exposure` fact: internal | internet-facing | partner
+    exposure: list[str] = []
 
 
 class RuleActionConfig(BaseModel):
-    test_level: str  # pentest | dast | both | none
+    test_level: str  # pentest | dast | none
     priority: str = "medium"  # high | medium | low
+    # Optional upper bound for the aggregate test level (pentest | dast | none).
+    # e.g. an intranet rule can cap the overall requirement at dast.
+    cap: str | None = None
 
 
 class RuleConfig(BaseModel):
@@ -44,12 +52,9 @@ class RuleConfig(BaseModel):
     triggers: RuleTriggerConfig
     action: RuleActionConfig
     reasoning: str
-    frameworks: list[str] = []
 
 
 class ComplianceConfig(BaseModel):
-    enabled: list[str] = []
-    frameworks: dict[str, FrameworkConfig] = {}
     rules: list[RuleConfig] = []
 
 
@@ -66,6 +71,8 @@ class AppConfig(BaseModel):
     retrieval_top_k: int = 6
     review_max_input_chars: int = 60000
     asyncio_debug: bool = False
+    # Set to false to disable the deterministic rule engine (LLM-only review).
+    enable_rule_engine: bool = True
 
     @property
     def dropbox_dir(self) -> Path:
@@ -124,6 +131,7 @@ def load_config(config_path: Path | None = None, compliance_path: Path | None = 
         keys = [
             "poll_interval_sec", "chunk_size", "chunk_overlap", "embed_batch_size",
             "retrieval_top_k", "review_max_input_chars", "asyncio_debug",
+            "enable_rule_engine",
         ]
         return {k: raw[k] for k in keys if k in raw}
 

@@ -18,10 +18,45 @@ class ChromaVectorRepository(VectorRepository):
     def __init__(self, chroma_dir: Path, embedding_dim: int = 1024):
         chroma_dir.mkdir(parents=True, exist_ok=True)
         self._client = chromadb.PersistentClient(path=str(chroma_dir))
-        self._collection: Collection = self._client.get_or_create_collection(
-            name=_COLLECTION, metadata={"hnsw:space": "cosine"}
-        )
         self._embedding_dim = embedding_dim
+        self._collection: Collection = self._get_or_create(embedding_dim)
+
+    def _get_or_create(self, embedding_dim: int) -> Collection:
+        return self._client.get_or_create_collection(
+            name=_COLLECTION,
+            metadata={"hnsw:space": "cosine", "embedding_dim": embedding_dim},
+        )
+
+    def reset_collection(self) -> None:
+        """Delete and recreate the collection with a fresh index. Needed when the
+        embedding model (and thus the vector dimension) changes: Chroma pins a
+        collection's dimension at creation and rejects vectors of any other size."""
+        try:
+            self._client.delete_collection(_COLLECTION)
+        except Exception:
+            pass
+        self._collection = self._get_or_create(self._embedding_dim)
+
+    def dimension_matches(self, embedding_dim: int) -> bool:
+        """True if the stored collection uses the given vector dimension."""
+        try:
+            meta = dict(self._collection.metadata or {})
+            if "embedding_dim" in meta:
+                return int(meta["embedding_dim"]) == embedding_dim
+        except Exception:
+            pass
+        # legacy collection created before we stored the dimension in metadata:
+        # infer it from a stored vector, if any.
+        try:
+            got = self._collection.get(limit=1, include=["embeddings"])
+            embs = got.get("embeddings")
+            if embs is not None and len(embs) > 0:
+                return len(embs[0]) == embedding_dim
+        except Exception:
+            pass
+        # Unknown (legacy empty collection's dimension is still pinned by its
+        # index) -> safest to rebuild.
+        return False
 
     def upsert_chunks(self, chunks: list[Chunk]) -> None:
         if not chunks:
