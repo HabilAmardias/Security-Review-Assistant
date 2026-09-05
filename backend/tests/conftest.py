@@ -23,20 +23,25 @@ def app_config() -> AppConfig:
     )
 
 
-@pytest.fixture()
-def container(app_config) -> Container:
-    c = Container(app_config)
-    # swap the real Ollama client and Chroma for in-memory fakes
-    fake_llm = FakeLlm()
-    c.llm = fake_llm
-    c.ingestion._llm = fake_llm
-    c.retrieval._llm = fake_llm
-    c.fact_extraction._llm = fake_llm
-    c.review_usecase._llm = fake_llm
+def _wire_fakes(c: Container) -> FakeLlm:
+    fake = FakeLlm()
+    c.llm = fake
+    c.ingestion._llm = fake
+    c.retrieval._llm = fake
+    c.fact_extraction._llm = fake
+    c.review_usecase._llm = fake
+    c.review_usecase._threat._llm = fake
     in_mem = InMemoryVectorRepository()
     c.vectors = in_mem
     c.ingestion._vectors = in_mem
     c.retrieval._vectors = in_mem
+    return fake
+
+
+@pytest.fixture()
+def container(app_config) -> Container:
+    c = Container(app_config)
+    _wire_fakes(c)
     return c
 
 

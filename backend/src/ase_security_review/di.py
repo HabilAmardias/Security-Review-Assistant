@@ -45,6 +45,7 @@ class Container:
             config.data_dir,
             config.documents_dir,
             config.extracted_dir,
+            config.diagrams_dir,
             config.chroma_dir,
             config.dropbox_dir,
             *config.dropbox_folders.values(),

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+
 import httpx
 
 from ..config.settings import LlmConfig
@@ -24,8 +26,12 @@ class OllamaClient(LlmPort):
         system: str | None = None,
         format: str | None = None,
         temperature: float | None = None,
+        images: list[bytes] | None = None,
+        step: str | None = None,
     ) -> str:
-        payload = self._build_payload(prompt, system=system, format=format, temperature=temperature)
+        payload = self._build_payload(
+            prompt, system=system, format=format, temperature=temperature, images=images, step=step
+        )
         resp = self._client.post("/api/chat", json=payload)
         resp.raise_for_status()
         data = resp.json()
@@ -37,7 +43,7 @@ class OllamaClient(LlmPort):
             thinking = msg.get("thinking") or ""
             detail = (
                 f"model consumed all {self._config.max_tokens} output tokens on reasoning "
-                "without producing an answer — set llm.enable_thinking: false (config.yaml)"
+                "without producing an answer — set llm.thinking.<step> to false (config.yaml)"
                 if data.get("done_reason") == "length"
                 else "no tokens generated"
             )
@@ -52,17 +58,22 @@ class OllamaClient(LlmPort):
         system: str | None = None,
         format: str | None = None,
         temperature: float | None = None,
+        images: list[bytes] | None = None,
+        step: str | None = None,
     ) -> dict:
+        user_content: dict = {"role": "user", "content": prompt}
+        if images:
+            user_content["images"] = [base64.b64encode(img).decode("ascii") for img in images]
         messages: list[dict] = []
         if system:
             messages.append({"role": "system", "content": system})
-        messages.append({"role": "user", "content": prompt})
+        messages.append(user_content)
 
         payload: dict = {
             "model": self._config.reasoning_model,
             "messages": messages,
             "stream": False,
-            "think": self._config.enable_thinking,
+            "think": self._config.thinking.get(step, False),
         }
         if format:
             payload["format"] = format

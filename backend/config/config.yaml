@@ -5,24 +5,33 @@ llm:
   base_url: "http://127.0.0.1:11434"
   # Reasoning model used for fact extraction + final security decision.
   # Change freely to any model you have pulled, e.g. qwen3:8b, llama3.1:8b, qwen2.5:14b
-  reasoning_model: "gemma4:12b-mlx"
+  # NOTE: reading diagram images (threat pipeline step 1) requires a VISION-capable
+  # model (e.g. qwen2.5vl). If the model has no vision, diagrams are skipped gracefully.
+  reasoning_model: "qwen3.5:4b-mlx"
   # Embedding model used to index SOP/policy/previous-review documents.
   # When you change the embedding model, update embedding_dim to its output size.
   # On the next restart the vector index is rebuilt automatically from the cached
   # plaintext (no PDFs/passwords needed); you can also trigger it from the UI
   # ("Rebuild index" on the Knowledge Base page).
-  embedding_model: "embeddinggemma:300m"
-  embedding_dim: 768
-  temperature: 0.1
-  max_tokens: 4096
+  embedding_model: "qwen3-embedding:0.6b"
+  embedding_dim: 1024
+  temperature: 0.7
+  max_tokens: 16384
   # Context window (tokens) for the reasoning model. Ollama defaults to 4096,
   # which truncates long review prompts. qwen3.x handles 32K+; set to what your
   # model supports (raise if reviews return empty/broken output).
   num_ctx: 16384
-  # qwen3.x models default to reasoning mode and can burn the whole output token
-  # budget on thinking, returning an empty answer. Keep `false` for structured
-  # JSON output; set `true` (and raise max_tokens) to keep reasoning enabled.
-  enable_thinking: true
+  # Per-step reasoning toggle for every LLM call (unlisted step defaults to
+  # false). qwen3.x-style models can burn the whole output budget on thinking and
+  # return an empty answer, so tune each step here.
+  thinking:
+    fact_extraction: false
+    diagrams: false        # vision-capable model only
+    requirement: true
+    architecture: true
+    assets: true
+    threats: true
+    decision: true
   # Timeout in seconds for Ollama requests. `null` (default) disables the
   # timeout entirely — needed for slow local models on first load / long reviews.
   request_timeout_sec: null
@@ -35,6 +44,15 @@ extraction:
   #           chars/page, flag the doc as NEEDS_OCR (you can run OCR from the UI)
   default_mode: "auto"
   auto_detect_threshold: 50
+  # Diagram pages (image-bearing PDF pages) are rasterized and sent to the model.
+  diagram_dpi: 150
+  max_diagram_pages: 8
+
+# Deterministic rules act as HARD BOUNDS inside the staged threat-model pipeline:
+#   - intranet/internal apps are capped at DAST
+#   - internet/public apps require at least DAST
+# Set false to keep the rule engine dormant (STRIDE/LLM decides without bounds).
+enable_rule_engine: true
 
 data_dir: "data"
 poll_interval_sec: 10
@@ -43,6 +61,3 @@ chunk_overlap: 120
 embed_batch_size: 64
 retrieval_top_k: 6
 review_max_input_chars: 60000
-# Deterministic rule engine (compliance.yaml rules). Set to false to run
-# LLM-only reviews — no rules fired, no rule-vs-LLM conflict check.
-enable_rule_engine: true

@@ -37,7 +37,12 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
         "rule_engine_enabled": "INTEGER DEFAULT 1",
         "detected_exposure": "VARCHAR(32)",
         "exposure_override": "VARCHAR(32)",
+        "change_scope_override": "VARCHAR(32)",
         "form_fields_json": "TEXT",
+        "pipeline": "VARCHAR(16)",
+        "current_stage": "VARCHAR(32)",
+        "analysis_json": "TEXT",
+        "diagram_paths_json": "TEXT",
     },
 }
 

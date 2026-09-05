@@ -105,10 +105,20 @@ class Review:
     nfrd_text: str = ""
     facts: dict[str, Any] | None = None
     rule_engine_enabled: bool = True
+    # pipeline (threat-model) used for this review
+    pipeline: str = "threat"
+    # current pipeline stage label (for progress)
+    current_stage: str = ""
+    # staged analysis artifacts: diagrams, requirement, architecture, assets, threat_model
+    analysis: dict[str, Any] | None = None
+    # paths to rasterized diagram images (cleaned up on delete)
+    diagram_paths: list[str] = field(default_factory=list)
     # app exposure derived from the PDF form fields
     detected_exposure: str | None = None
     # human-confirmed exposure override (internal | internet-facing | partner)
     exposure_override: str | None = None
+    # human-confirmed change-scope override (limited_change | feature_change | full_new_app | other)
+    change_scope_override: str | None = None
     # deterministic form selections extracted from the FRD/NFRD PDFs
     form_fields: list[FormField] = field(default_factory=list)
     retrieved_sources: list[str] = field(default_factory=list)

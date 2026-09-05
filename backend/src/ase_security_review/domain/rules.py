@@ -6,7 +6,7 @@ from typing import Any
 
 from ..config.settings import RuleConfig
 from .enums import TestLevel
-from .models import FiredRule, SecurityDecision
+from .models import Conflict, FiredRule, SecurityDecision
 
 _LEVEL_RANK = {"none": 0, "dast": 1, "pentest": 2}
 _PRIORITY_RANK = {"low": 1, "medium": 2, "high": 3}
@@ -41,6 +41,7 @@ def evaluate_facts(facts: dict[str, Any], rules: list[RuleConfig]) -> list[Fired
     data_classes = {str(d).lower() for d in (facts.get("data_classes") or [])}
     features = [str(f).lower() for f in (facts.get("features") or [])]
     exposure = str(facts.get("exposure") or "").lower()
+    change_scope = str(facts.get("change_scope") or "").lower()
     text = facts_text(facts)
 
     for rule in rules:
@@ -64,6 +65,9 @@ def evaluate_facts(facts: dict[str, Any], rules: list[RuleConfig]) -> list[Fired
 
         if not matched and tr.exposure:
             matched = exposure in {e.lower() for e in tr.exposure}
+
+        if not matched and tr.change_scope:
+            matched = change_scope in {c.lower() for c in tr.change_scope}
 
         if matched:
             fired.append(
@@ -120,3 +124,39 @@ def apply_cap(decision: SecurityDecision, fired: list[FiredRule]) -> SecurityDec
         risk_factors=list(decision.risk_factors),
         scope=decision.scope,
     )
+
+
+def rule_conflicts(rule_level: TestLevel | None, fired: list[FiredRule], llm: SecurityDecision) -> list[Conflict]:
+    """Flag LLM decisions that violate a deterministic rule bound: below the rule
+    floor, or above a declared cap. (Rules are hard bounds in the threat pipeline.)"""
+    if rule_level is None or llm is None:
+        return []
+    conflicts: list[Conflict] = []
+    caps = [r.cap for r in fired if r.cap is not None]
+    cap = min(caps, key=lambda c: _LEVEL_RANK[c.value]) if caps else None
+
+    if _LEVEL_RANK[llm.test_level.value] < _LEVEL_RANK[rule_level.value]:
+        conflicts.append(
+            Conflict(
+                field="test_level",
+                rules_value=rule_level.value,
+                llm_value=llm.test_level.value,
+                explanation=(
+                    f"The rule engine requires at least {rule_level.value}, but the agent "
+                    f"recommended {llm.test_level.value}."
+                ),
+            )
+        )
+    if cap is not None and _LEVEL_RANK[llm.test_level.value] > _LEVEL_RANK[cap.value]:
+        conflicts.append(
+            Conflict(
+                field="test_level",
+                rules_value=cap.value,
+                llm_value=llm.test_level.value,
+                explanation=(
+                    f"The rule engine caps this application at {cap.value}, but the agent "
+                    f"recommended {llm.test_level.value}."
+                ),
+            )
+        )
+    return conflicts

@@ -85,6 +85,8 @@ class LlmPort(ABC):
         system: str | None = None,
         format: str | None = None,
         temperature: float | None = None,
+        images: list[bytes] | None = None,
+        step: str | None = None,
     ) -> str: ...
 
     @abstractmethod

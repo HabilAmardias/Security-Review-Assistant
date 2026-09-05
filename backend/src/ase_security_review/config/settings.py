@@ -16,10 +16,12 @@ class LlmConfig(BaseModel):
     # 4096, which truncates long review prompts and makes the model return empty
     # or broken output. Raise if your model supports it (qwen3.x supports 32K+).
     num_ctx: int = 16384
-    # qwen3.x models default to reasoning mode: they may spend the whole token
-    # budget on thinking and return an EMPTY answer. Keep this False for
-    # structured JSON output; set True (and raise max_tokens) to keep reasoning.
-    enable_thinking: bool = False
+    # Per-step reasoning toggle for every LLM call, keyed by step name
+    # (fact_extraction, diagrams, requirement, architecture, assets, threats,
+    # decision). An unlisted step defaults to false (safe for JSON output).
+    # qwen3.x-style models can burn the token budget on thinking and return an
+    # empty answer, so tune per step.
+    thinking: dict[str, bool] = {}
     # None disables the timeout entirely; set a value (seconds) to re-enable it.
     request_timeout_sec: Optional[int] = None
 
@@ -28,6 +30,9 @@ class ExtractionConfig(BaseModel):
     default_mode: str = "auto"  # auto | text | ocr
     auto_detect_threshold: int = Field(50, description="chars/page below which a doc is flagged NEEDS_OCR")
     ocr_language: str = "eng"  # tesseract language(s), e.g. "eng", "ind", "eng+ind"
+    # Rasterization settings for diagram pages passed to the (vision-capable) model.
+    diagram_dpi: int = Field(150, description="DPI used to rasterize image-bearing PDF pages")
+    max_diagram_pages: int = Field(8, description="max image-bearing pages sent to the vision model")
 
 
 class RuleTriggerConfig(BaseModel):
@@ -36,6 +41,8 @@ class RuleTriggerConfig(BaseModel):
     features: list[str] = []
     # Matches the structured `exposure` fact: internal | internet-facing | partner
     exposure: list[str] = []
+    # Matches the structured `change_scope` fact: limited_change | feature_change | full_new_app | other
+    change_scope: list[str] = []
 
 
 class RuleActionConfig(BaseModel):
@@ -71,8 +78,13 @@ class AppConfig(BaseModel):
     retrieval_top_k: int = 6
     review_max_input_chars: int = 60000
     asyncio_debug: bool = False
-    # Set to false to disable the deterministic rule engine (LLM-only review).
+    # Rules (intranet DAST cap, internet DAST floor) act as hard bounds inside the
+    # threat-model pipeline. Set to false to keep the rule engine dormant.
     enable_rule_engine: bool = True
+
+    @property
+    def diagrams_dir(self) -> Path:
+        return self.data_dir / "diagrams"
 
     @property
     def dropbox_dir(self) -> Path:

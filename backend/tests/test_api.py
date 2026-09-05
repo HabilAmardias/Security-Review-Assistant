@@ -192,6 +192,24 @@ def test_update_exposure_patch(container):
         assert res.json()["facts"]["exposure"] == "internet-facing"
 
 
+def test_update_change_scope_patch(container):
+    review = container.review_usecase.create_review(
+        "f.pdf", "Payment checkout.", "n.pdf", "Internet-facing portal.", detected_exposure="internet-facing"
+    )
+    review = container.review_usecase.run_review(review.id)
+    with _client(container) as client:
+        res = client.patch(f"/api/reviews/{review.id}/change-scope", json={"change_scope": "limited_change"})
+        assert res.status_code == 200
+        body = res.json()
+        assert body["change_scope_override"] == "limited_change"
+        assert body["facts"]["change_scope"] == "limited_change"
+
+        # clearing the override falls back to the FRD/LLM value
+        res = client.patch(f"/api/reviews/{review.id}/change-scope", json={"change_scope": None})
+        assert res.status_code == 200
+        assert res.json()["change_scope_override"] is None
+
+
 def test_mark_stale_running_failed(container):
     review = container.review_usecase.create_review("f.pdf", "text", "n.pdf", "text")
     assert container.reviews.get(review.id).status.value == "running"

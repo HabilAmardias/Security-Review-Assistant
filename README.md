@@ -7,7 +7,7 @@ It takes an **FRD** (Functional Requirements Document) and an **NFRD** (Non-Func
 Requirements Document) and returns:
 
 1. **Is a pentest needed, or is DAST sufficient?** (`pentest | dast | none`)
-2. **Reasoning** — citing the data classes, your SOP/policy rules that fired, and the relevant
+2. **Reasoning** — citing the STRIDE threats, trust boundaries, assets, and the relevant
    previous security reviews that were retrieved.
 3. **Scope** — in/out of scope components, test methods, environments, and effort estimate.
 
@@ -153,11 +153,26 @@ mode: `auto` / `text` / `ocr`).
 ### Run a review
 
 1. Open **New Review**, upload the **FRD** and **NFRD** (PDF, Markdown, or TXT; add a password if a PDF is locked).
-2. The agent: extracts structured facts → retrieves your SOP/policy/precedent → fires rules →
-   produces a JSON decision → checks for conflicts with the rules.
-3. Open the review to see the **verdict**, **reasoning**, **scope**, fired rules, and retrieved
-   sources. If the rule engine and the LLM disagree, a conflict banner appears so a human can make
-   the final call (override controls included).
+2. The agent runs the **staged threat-model pipeline**:
+   1. **Read diagrams** — PDF pages containing images (e.g. use-case/architecture diagrams) are rasterized
+      and understood by a vision-capable model. (Skips gracefully if no images or the model isn't
+      multimodal — diagrams aren't required for the rest to run.)
+   2. **Understand requirement** — what information is submitted, by whom, where it goes, who approves.
+   3. **Architecture & trust boundaries** — components, data flows, entry points, integrations, trust boundaries.
+   4. **Identify assets** — what is being protected, grounded in the knowledge base (SOP/policy/previous reviews).
+   5. **STRIDE threat modelling** — concrete threats per element/flow/trust boundary with severity.
+   6. **Determine the security test** — `none | dast | pentest` + scope from the STRIDE findings, bounded by
+      the deterministic rules.
+3. Open the review to see each stage's artifact (requirement, trust boundaries, assets, STRIDE threat
+   table), the **verdict** + scope, and the human override controls. Changing **exposure** or
+   **change scope** re-runs the whole pipeline with the corrected context.
+
+> The review is **change-scoped**: the agent analyzes what the FRD change introduces or modifies
+> (requirement, architecture & trust boundaries, assets, STRIDE threats, and test scope), using the
+> rest of the application as background context only. The deterministic rules remain **hard bounds**
+> on the final verdict: intranet/internal apps are capped at DAST and internet/public apps require at
+> least DAST. Set `enable_rule_engine: false` in `backend/config/config.yaml` to keep them dormant
+> (STRIDE/LLM decides without bounds).
 
 ### The output
 
@@ -165,10 +180,10 @@ mode: `auto` / `text` / `ocr`).
 {
   "requires_pentest": true,
   "test_level": "pentest",              // pentest | dast | none
-  "classification_reason": "...",       // cites data classes, fired rules, retrieved sources
+  "classification_reason": "...",       // cites STRIDE threats, trust boundaries, assets
   "risk_factors": ["..."],
   "scope": {
-    "in_scope": ["web app", "REST APIs", "auth flows"],
+    "in_scope": ["payment API", "auth flows"],
     "out_of_scope": ["infrastructure"],
     "test_methods": ["OWASP ASVS L2", "API scanning", "manual authz testing"],
     "environments": ["staging pre-release"],
@@ -190,7 +205,14 @@ llm:
   embedding_model: "qwen3-embedding:0.6b"          # change freely; must match embedding_dim
   embedding_dim: 1024                              # output size of the embedding model
   num_ctx: 16384        # context window; Ollama's 4096 default truncates long reviews
-  enable_thinking: false  # keep false for JSON output; qwen3.x can burn tokens on reasoning
+  thinking:             # per-step reasoning toggle (unlisted step defaults to false)
+    fact_extraction: false
+    diagrams: false
+    requirement: true
+    architecture: true
+    assets: false
+    threats: true
+    decision: true
 ```
 
 > Changing the embedding model: update `embedding_dim` to the new model's output size. On the next
@@ -213,15 +235,13 @@ review_max_input_chars: 60000 # per-doc input budget for the reasoning LLM
 
 ### `backend/config/compliance.yaml`
 
-- **`compliance.rules`** — the deterministic rule engine. Only the two exposure-based decision
-  rules are defined:
-  - **R-06** internet/public-facing → `dast` floor (whether a pentest is also needed is left to the
-    review analysis — the LLM can recommend `pentest`, which then surfaces as a rule-vs-LLM conflict
-    for a human to confirm).
+- **`compliance.rules`** — the deterministic rule engine. Two exposure-based **hard-bound** rules:
+  - **R-06** internet/public-facing → `dast` **floor** (never below DAST; STRIDE/LLM can still escalate to `pentest`).
   - **R-11** intranet/internal-only → `dast` with `cap: dast` (intranet is always DAST-only, even if
-    the LLM suggests pentest).
-  Each rule matches on `data_classes`, `keywords`, `features`, and/or `exposure` extracted from the
-  FRD/NFRD and mandates a `test_level` (`pentest | dast | none`). Fired rules are shown in every report.
+    STRIDE finds critical threats or the LLM suggests pentest).
+  Each rule matches on `data_classes`, `keywords`, `features`, `exposure`, and/or `change_scope`
+  extracted from the FRD/NFRD and mandates a `test_level` (`pentest | dast | none`). Fired rules and
+  any rule-bound violations by the agent are shown in every report.
 
 ---
 

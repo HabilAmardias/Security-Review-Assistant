@@ -1,4 +1,9 @@
-const STEPS = [
+export interface Step {
+  key: string
+  label: string
+}
+
+const DEFAULT_STEPS: Step[] = [
   { key: 'facts', label: 'Extract facts' },
   { key: 'retrieve', label: 'Retrieve context' },
   { key: 'rules', label: 'Apply rules' },
@@ -8,13 +13,14 @@ const STEPS = [
 interface Props {
   current: number
   running: boolean
+  steps?: Step[]
 }
 
-export function Stepper({ current, running }: Props) {
+export function Stepper({ current, running, steps = DEFAULT_STEPS }: Props) {
   return (
-    <ol className="flex items-center gap-2" aria-label="Review pipeline progress">
-      {STEPS.map((step, i) => {
-        const done = i < current || (!running && i <= current && current >= STEPS.length)
+    <ol className="flex flex-wrap items-center justify-center gap-2" aria-label="Review progress">
+      {steps.map((step, i) => {
+        const done = i < current
         const active = running && i === current
         return (
           <li key={step.key} className="flex items-center gap-2">
@@ -38,8 +44,8 @@ export function Stepper({ current, running }: Props) {
                 {step.label}
               </span>
             </div>
-            {i < STEPS.length - 1 && (
-              <span className={`h-px w-6 ${done ? 'bg-accent' : 'bg-border'}`} aria-hidden />
+            {i < steps.length - 1 && (
+              <span className={`h-px w-6 ${done || active ? 'bg-accent' : 'bg-border'}`} aria-hidden />
             )}
           </li>
         )

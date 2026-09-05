@@ -122,6 +122,19 @@ def test_cap_exposed_on_fired_rule():
     assert rule.cap == TestLevel.DAST
 
 
+def test_rule_conflicts_only_on_bound_violation():
+    from ase_security_review.domain.rules import rule_conflicts
+
+    fired = evaluate_facts({"exposure": "internal"}, RULES)  # R7 caps at dast
+
+    # pentest above the cap -> conflict
+    assert rule_conflicts(aggregate_test_level(fired), fired, _decision("pentest"))
+    # none below the dast floor -> conflict
+    assert rule_conflicts(aggregate_test_level(fired), fired, _decision("none"))
+    # dast at the bound -> no conflict
+    assert rule_conflicts(aggregate_test_level(fired), fired, _decision("dast")) == []
+
+
 def test_pentest_required():
     assert pentest_required(TestLevel.PENTEST) is True
     assert pentest_required(TestLevel.DAST) is False

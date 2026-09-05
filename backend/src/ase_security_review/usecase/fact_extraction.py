@@ -17,7 +17,7 @@ Respond ONLY with valid JSON matching this exact schema:
   "app_type": "web" | "mobile" | "api" | "desktop" | "internal" | "other",
   "exposure": "internet-facing" | "internal" | "partner" | "unclear",
   "exposure_evidence": string,        // the exact sentence/field that states the exposure; "" if not stated
-  "change_scope": "full_new_app" | "feature_change" | "infra_config_change" | "other",
+  "change_scope": "full_new_app" | "feature_change" | "limited_change" | "other",
   "change_scope_evidence": string,    // quote the FRD sentence describing the scope of this change; "" if none
   "technologies": [string],          // frameworks, languages, DBs mentioned
   "data_classes": [string],          // subset of: payment, pii, phi, financial, credentials, none
@@ -34,7 +34,7 @@ Respond ONLY with valid JSON matching this exact schema:
 Rules:
 - For "exposure", base it ONLY on an explicit statement in the documents (e.g. "the app is on the intranet", "internet-facing", "only accessible from the corporate network"). Quote it in "exposure_evidence".
 - If the documents only LIST exposure options (e.g. a form that shows "Internet / External / Intranet / Lainnya") without making the selected value clear in text, set "exposure" to "unclear" and "exposure_evidence" to the option list. NEVER guess which option was selected.
-- For "change_scope", decide whether the FRD describes building a brand-new application ("full_new_app"), adding a feature/change to an existing application ("feature_change"), or only infrastructure/configuration changes that explicitly do NOT affect business logic or data processing ("infra_config_change"). Quote the exact FRD sentence stating the scope (e.g. that business logic / business process is unaffected) in "change_scope_evidence".
+- For "change_scope", decide whether the FRD describes building a brand-new application ("full_new_app"), adding a feature/change to an existing application ("feature_change"), or only a limited change that does NOT affect business logic or sensitive data processing ("limited_change"). A change is "limited_change" only if the FRD explicitly states that business logic / business process / sensitive data processing is unaffected (e.g. front-end-only or infrastructure/configuration-only changes such as load balancing, routing, TLS, or UI presentation). Do NOT classify as "limited_change" if the change touches business logic, authentication/authorization, API contracts, input validation, encryption, or sensitive-data storage/transmission. Quote the exact FRD sentence in "change_scope_evidence". If the scope is ambiguous or the FRD does not clearly state that logic/data processing is unaffected, use "other".
 - The documents may be in English, Indonesian, or mixed. Analyze them regardless of language. Omit no fields; use empty arrays or empty strings where unknown.
 """
 
@@ -81,6 +81,7 @@ class FactExtractionService:
                 prompt if attempt == 0 else "Respond ONLY with valid JSON matching the schema.\n\n" + prompt,
                 system=_FACT_SYSTEM,
                 format=use_format,
+                step="fact_extraction",
             )
             try:
                 return FactsModel.model_validate(parse_json_object(raw))

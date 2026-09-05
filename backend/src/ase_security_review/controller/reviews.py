@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from ..domain.models import Scope, SecurityDecision
 from ..domain.enums import parse_test_level
+from ..usecase.review import _UNSET
 from .deps import get_container, run_backend
 from .schemas import review_to_dict
 
@@ -28,17 +29,22 @@ class ExposureRequest(BaseModel):
     exposure: str | None = None  # internal | internet-facing | partner | null (clear override)
 
 
+class ChangeScopeRequest(BaseModel):
+    change_scope: str | None = None  # limited_change | feature_change | full_new_app | other | null (reset)
+
+
 _PDF_MAGIC = b"%PDF"
 
 
 def _read_upload(request: Request, file: UploadFile, password: str | None):
     """Read an FRD/NFRD upload. PDFs are detected by content (magic bytes), not the
-    filename extension. Returns (text, form_fields, detected_exposure)."""
+    filename extension. Returns (text, form_fields, detected_exposure, image_paths)."""
     content = file.file.read()
 
     if content.startswith(_PDF_MAGIC):
         c = get_container(request)
         import tempfile
+        import uuid
 
         with tempfile.TemporaryDirectory() as tmp:
             pdf_path = Path(tmp) / "input.pdf"
@@ -47,14 +53,21 @@ def _read_upload(request: Request, file: UploadFile, password: str | None):
                 result = c.extraction.extract_text(pdf_path, password=password)
                 form_fields = c.extraction.extract_form_fields(pdf_path, password=password)
                 detected = c.extraction.exposure_from_form_fields(form_fields)
-                return result.text, form_fields, detected
+                images = c.extraction.extract_images(pdf_path, password=password)
+                c.config.diagrams_dir.mkdir(parents=True, exist_ok=True)
+                image_paths = []
+                for i, img in enumerate(images):
+                    dest = c.config.diagrams_dir / f"{uuid.uuid4().hex}_{i}.png"
+                    dest.write_bytes(img.data)
+                    image_paths.append(str(dest))
+                return result.text, form_fields, detected, image_paths
             except Exception as exc:
                 raise HTTPException(400, f"Could not read PDF '{file.filename}': {exc}") from exc
 
     # Markdown / plain text: strip a UTF-8 BOM, then decode.
     if content.startswith(b"\xef\xbb\xbf"):
         content = content[3:]
-    return content.decode("utf-8", errors="replace"), [], None
+    return content.decode("utf-8", errors="replace"), [], None, []
 
 
 @router.post("")
@@ -65,11 +78,12 @@ async def create_review(
     frd_password: Optional[str] = Form(None),
     nfrd_password: Optional[str] = Form(None),
     exposure: Optional[str] = Form(None),
+    change_scope: Optional[str] = Form(None),
 ):
     c = get_container(request)
     try:
-        frd_text, frd_fields, frd_exposure = _read_upload(request, frd, frd_password)
-        nfrd_text, nfrd_fields, nfrd_exposure = _read_upload(request, nfrd, nfrd_password)
+        frd_text, frd_fields, frd_exposure, frd_images = _read_upload(request, frd, frd_password)
+        nfrd_text, nfrd_fields, nfrd_exposure, nfrd_images = _read_upload(request, nfrd, nfrd_password)
     except Exception as exc:
         raise HTTPException(400, f"Could not read input documents: {exc}") from exc
 
@@ -85,7 +99,9 @@ async def create_review(
         nfrd_text,
         detected_exposure=detected_exposure,
         exposure_override=exposure if exposure and exposure != "auto" else None,
+        change_scope_override=change_scope if change_scope and change_scope != "auto" else None,
         form_fields=form_fields,
+        diagram_paths=frd_images + nfrd_images,
     )
     run_backend(c.review_usecase.run_review, review.id)
     return review_to_dict(review)
@@ -109,8 +125,14 @@ def get_review(review_id: str, request: Request):
 @router.delete("/{review_id}")
 def delete_review(review_id: str, request: Request):
     c = get_container(request)
-    if not c.reviews.get(review_id):
+    review = c.reviews.get(review_id)
+    if not review:
         raise HTTPException(404, "Review not found")
+    for p in review.diagram_paths:
+        try:
+            Path(p).unlink(missing_ok=True)
+        except OSError:
+            pass
     c.reviews.delete(review_id)
     return {"deleted": review_id}
 
@@ -120,7 +142,16 @@ def update_exposure(review_id: str, body: ExposureRequest, request: Request):
     c = get_container(request)
     if not c.reviews.get(review_id):
         raise HTTPException(404, "Review not found")
-    review = c.review_usecase.update_exposure(review_id, body.exposure)
+    review = c.review_usecase.apply_override(review_id, exposure=body.exposure, change_scope=_UNSET)
+    return review_to_dict(review, include_texts=True)
+
+
+@router.patch("/{review_id}/change-scope")
+def update_change_scope(review_id: str, body: ChangeScopeRequest, request: Request):
+    c = get_container(request)
+    if not c.reviews.get(review_id):
+        raise HTTPException(404, "Review not found")
+    review = c.review_usecase.apply_override(review_id, exposure=_UNSET, change_scope=body.change_scope)
     return review_to_dict(review, include_texts=True)
 
 

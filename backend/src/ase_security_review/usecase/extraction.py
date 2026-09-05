@@ -30,6 +30,14 @@ class PdfTextResult:
     pages: int
 
 
+@dataclass
+class PdfImage:
+    page: int
+    data: bytes
+    width: int = 0
+    height: int = 0
+
+
 class PdfExtractionService:
     def __init__(self, config: ExtractionConfig):
         self._config = config
@@ -94,6 +102,32 @@ class PdfExtractionService:
                 ) from exc
             raise
         return self.extract_text(out_path)
+
+    def extract_images(self, path: Path, password: str | None = None) -> list[PdfImage]:
+        """Rasterize pages that contain embedded images (e.g. diagrams) into PNGs.
+        Used to feed diagrams to a vision-capable model."""
+        import pymupdf
+
+        doc = pymupdf.open(str(path))
+        try:
+            if doc.needs_pass:
+                doc.authenticate(password or "")
+            images: list[PdfImage] = []
+            for pno in range(min(len(doc), self._config.max_diagram_pages + 1)):
+                page = doc[pno]
+                if not page.get_images(full=True):
+                    continue
+                zoom = self._config.diagram_dpi / 72.0
+                pix = page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom))
+                if pix.width > 1600 or pix.height > 1600:
+                    scale = min(1600 / pix.width, 1600 / pix.height)
+                    pix = page.get_pixmap(matrix=pymupdf.Matrix(zoom * scale, zoom * scale))
+                images.append(PdfImage(page=pno + 1, data=pix.tobytes("png"), width=pix.width, height=pix.height))
+                if len(images) >= self._config.max_diagram_pages:
+                    break
+            return images
+        finally:
+            doc.close()
 
     # ---- deterministic form-field extraction (colour-outlier selection) ----
 

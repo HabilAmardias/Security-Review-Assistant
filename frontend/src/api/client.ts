@@ -58,6 +58,7 @@ export const api = {
     frdPassword?: string,
     nfrdPassword?: string,
     exposure?: string,
+    changeScope?: string,
   ) => {
     const form = new FormData()
     form.append('frd', frd)
@@ -65,10 +66,13 @@ export const api = {
     if (frdPassword) form.append('frd_password', frdPassword)
     if (nfrdPassword) form.append('nfrd_password', nfrdPassword)
     if (exposure && exposure !== 'auto') form.append('exposure', exposure)
+    if (changeScope && changeScope !== 'auto') form.append('change_scope', changeScope)
     return req<Review>('/reviews', { method: 'POST', body: form })
   },
   updateExposure: (id: string, exposure: string | null) =>
     req<Review>(`/reviews/${id}/exposure`, json('PATCH', { exposure })),
+  updateChangeScope: (id: string, changeScope: string | null) =>
+    req<Review>(`/reviews/${id}/change-scope`, json('PATCH', { change_scope: changeScope })),
   setDecision: (id: string, decision: Decision) =>
     req<Review>(`/reviews/${id}/decision`, json('PATCH', decision)),
 }

@@ -1,9 +1,9 @@
-# Deterministic rule engine definitions.
-# The review agent fires these rules from facts extracted from the FRD/NFRD and
-# shows them in the report. Only the exposure-based decision rules are kept:
+# Deterministic rule engine definitions. These act as HARD BOUNDS inside the
+# staged threat-model pipeline:
 #   - intranet/internal apps are capped at DAST
-#   - internet/public apps get a DAST floor; whether pentest is also needed is
-#     decided by the review analysis (LLM + human), not by a rule
+#   - internet/public apps get a DAST floor
+# Within those bounds the STRIDE/LLM analysis decides (e.g. an internet app with
+# critical threats can still be escalated to pentest).
 compliance:
   rules:
     - id: "R-06"

@@ -14,7 +14,7 @@ DEFAULT_FACTS = {
     "app_name": "Payment Portal",
     "app_type": "web",
     "exposure": "internet-facing",
-    "change_scope": "infra_config_change",
+    "change_scope": "limited_change",
     "change_scope_evidence": "No change to business logic or business process.",
     "technologies": ["react", "python"],
     "data_classes": ["payment", "pii"],
@@ -54,9 +54,82 @@ class FakeLlm(LlmPort):
         self.decision = decision or DEFAULT_DECISION
         self.generate_calls: list[str] = []
         self.embed_calls: list[list[str]] = []
+        self.fail_on_images = False
+        self.threat_outputs = {
+            "architecture / use-case diagrams": {
+                "diagrams": [
+                    {
+                        "label": "Login",
+                        "actors": ["User", "Admin"],
+                        "use_cases": ["Login", "Approve loan"],
+                        "flows": ["User -> API -> Core"],
+                        "external_systems": ["SSO"],
+                        "notes": "",
+                    }
+                ],
+                "summary": "login and approval diagram",
+            },
+            "describe the requirement": {
+                "summary": "loan origination with admin approval",
+                "data_submitted": ["KTP", "salary"],
+                "actors": ["customer", "admin"],
+                "destinations": ["backend API", "core banking"],
+                "approvers": ["admin"],
+                "triggers": ["submit application"],
+                "affected_features": ["loan application"],
+            },
+            "You are a security architect": {
+                "summary": "web app -> api -> core",
+                "components": [
+                    {"name": "frontend", "role": "ui", "sensitive": False},
+                    {"name": "api", "role": "business logic", "sensitive": True},
+                ],
+                "data_flows": [
+                    {"source": "frontend", "destination": "api", "data": "pii", "protocol": "https"}
+                ],
+                "trust_boundaries": [{"between": "frontend / api", "reason": "network boundary"}],
+                "entry_points": ["/api"],
+                "integrations": ["core banking"],
+            },
+            "identifying the ASSETS": {
+                "assets": [
+                    {
+                        "name": "customer data",
+                        "asset_type": "data",
+                        "sensitivity": "pii/financial",
+                        "location": "api + core",
+                        "protection_basis": "data protection policy",
+                        "kb_sources": [],
+                    }
+                ]
+            },
+            "Perform STRIDE threat modelling": {
+                "threats": [
+                    {
+                        "id": "T1",
+                        "element": "api",
+                        "stride_category": "Elevation of privilege",
+                        "scenario": "IDOR on loan approval",
+                        "likelihood": "high",
+                        "impact": "high",
+                        "severity": "high",
+                    }
+                ]
+            },
+        }
 
-    def generate(self, prompt, system=None, format=None, temperature=None):
+    def _threat_stage_json(self, system: str) -> dict | None:
+        for key, value in self.threat_outputs.items():
+            if key in system:
+                return value
+        return None
+
+    def generate(self, prompt, system=None, format=None, temperature=None, images=None, step=None):
         self.generate_calls.append(prompt)
+        if images and self.fail_on_images:
+            raise RuntimeError("model does not support images")
+        if self._threat_stage_json(system or "") is not None:
+            return json.dumps(self._threat_stage_json(system))
         if system and "security requirements analyst" in system:
             return json.dumps(self.facts)
         return json.dumps(self.decision)

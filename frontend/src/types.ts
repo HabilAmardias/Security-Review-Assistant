@@ -67,6 +67,71 @@ export interface Conflict {
   explanation: string
 }
 
+// ---- staged threat-model pipeline artifacts ----
+
+export interface DiagramArtifact {
+  diagrams: {
+    label: string
+    actors: string[]
+    use_cases: string[]
+    flows: string[]
+    external_systems: string[]
+    notes: string
+  }[]
+  summary: string
+  note?: string
+}
+
+export interface RequirementArtifact {
+  summary: string
+  data_submitted: string[]
+  actors: string[]
+  destinations: string[]
+  approvers: string[]
+  triggers: string[]
+  affected_features: string[]
+}
+
+export interface ArchitectureArtifact {
+  summary: string
+  components: { name: string; role: string; sensitive: boolean }[]
+  data_flows: { source: string; destination: string; data: string; protocol: string }[]
+  trust_boundaries: { between: string; reason: string }[]
+  entry_points: string[]
+  integrations: string[]
+}
+
+export interface AssetsArtifact {
+  assets: {
+    name: string
+    asset_type: string
+    sensitivity: string
+    location: string
+    protection_basis: string
+    kb_sources: string[]
+  }[]
+}
+
+export interface ThreatArtifact {
+  threats: {
+    id: string
+    element: string
+    stride_category: string
+    scenario: string
+    likelihood: string
+    impact: string
+    severity: string
+  }[]
+}
+
+export interface Analysis {
+  diagrams?: DiagramArtifact
+  requirement?: RequirementArtifact
+  architecture?: ArchitectureArtifact
+  assets?: AssetsArtifact
+  threats?: ThreatArtifact
+}
+
 export type ReviewStatus = 'running' | 'completed' | 'failed'
 
 export interface Review {
@@ -76,8 +141,13 @@ export interface Review {
   nfrd_name: string
   facts: Record<string, unknown> | null
   rule_engine_enabled: boolean
+  pipeline: string
+  current_stage: string
+  diagram_count: number
+  analysis: Analysis | null
   detected_exposure: string | null
   exposure_override: string | null
+  change_scope_override: string | null
   form_fields: FormField[]
   retrieved_sources: string[]
   rules_fired: FiredRule[]
