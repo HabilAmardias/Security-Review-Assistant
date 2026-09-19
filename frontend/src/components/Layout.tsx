@@ -3,6 +3,7 @@ import {
   ClipboardText,
   FolderOpen,
   GearSix,
+  ListChecks,
   ShieldCheck,
 } from '@phosphor-icons/react'
 import { useEffect, useState } from 'react'
@@ -12,6 +13,7 @@ const NAV = [
   { to: '/', label: 'Knowledge Base', icon: FolderOpen, end: true },
   { to: '/new-review', label: 'New Review', icon: ClipboardText },
   { to: '/reviews', label: 'Review History', icon: ShieldCheck },
+  { to: '/rules', label: 'Rules', icon: ListChecks },
   { to: '/settings', label: 'Settings', icon: GearSix },
 ]
 

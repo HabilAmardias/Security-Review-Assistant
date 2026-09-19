@@ -1,17 +1,16 @@
 """Configuration.
 
 Infrastructure settings come from the environment (`.env`). Business-logic
-settings are mutable, defaulted in code, persisted in the database, and edited
-via the UI. Compliance rules live in `compliance.yaml`.
+settings and compliance rules are mutable, persisted in the database, and edited
+via the UI.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
-import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -75,7 +74,7 @@ class BusinessSettings(BaseModel):
 
 
 # --------------------------------------------------------------------------- #
-# Compliance rules (compliance.yaml)
+# Compliance rules (persisted in the DB, managed via the Rules page)
 # --------------------------------------------------------------------------- #
 
 class RuleTriggerConfig(BaseModel):
@@ -91,10 +90,32 @@ class RuleActionConfig(BaseModel):
     priority: str = "medium"  # high | medium | low
     cap: str | None = None
 
+    @field_validator("test_level")
+    @classmethod
+    def _check_test_level(cls, v: str) -> str:
+        if v not in ("pentest", "dast", "none"):
+            raise ValueError("test_level must be one of: pentest, dast, none")
+        return v
+
+    @field_validator("priority")
+    @classmethod
+    def _check_priority(cls, v: str) -> str:
+        if v not in ("high", "medium", "low"):
+            raise ValueError("priority must be one of: high, medium, low")
+        return v
+
+    @field_validator("cap")
+    @classmethod
+    def _check_cap(cls, v: str | None) -> str | None:
+        if v is not None and v not in ("pentest", "dast", "none"):
+            raise ValueError("cap must be one of: pentest, dast, none")
+        return v
+
 
 class RuleConfig(BaseModel):
     id: str
     name: str
+    enabled: bool = True
     triggers: RuleTriggerConfig
     action: RuleActionConfig
     reasoning: str
@@ -170,23 +191,6 @@ class AppConfig(BaseModel):
         return self.retrieval.enable_rule_engine
 
 
-def load_yaml(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    with path.open("r", encoding="utf-8") as fh:
-        return yaml.safe_load(fh) or {}
-
-
-def _default_compliance_path() -> Path:
-    return Path(__file__).resolve().parent.parent.parent.parent / "config" / "compliance.yaml"
-
-
-def load_compliance(compliance_path: Path | None = None) -> ComplianceConfig:
-    path = compliance_path or _default_compliance_path()
-    raw = load_yaml(path).get("compliance")
-    return ComplianceConfig(**raw) if raw else ComplianceConfig()
-
-
 def deep_merge(base: dict, override: dict) -> dict:
     """Recursively merge `override` into a copy of `base` (dicts only)."""
     out = dict(base)
@@ -203,7 +207,11 @@ def business_from_dict(data: dict | None) -> BusinessSettings:
     return BusinessSettings.model_validate(deep_merge(BusinessSettings().model_dump(), data or {}))
 
 
-def build_config(infra: InfraSettings | None = None, business: dict | None = None) -> AppConfig:
+def build_config(
+    infra: InfraSettings | None = None,
+    business: dict | None = None,
+    rules: list[RuleConfig] | None = None,
+) -> AppConfig:
     infra = infra or InfraSettings()
     settings = business_from_dict(business)
     return AppConfig(
@@ -211,5 +219,5 @@ def build_config(infra: InfraSettings | None = None, business: dict | None = Non
         llm=settings.llm,
         extraction=settings.extraction,
         retrieval=settings.retrieval,
-        compliance=load_compliance(),
+        compliance=ComplianceConfig(rules=rules or []),
     )

@@ -44,6 +44,8 @@ def evaluate_facts(facts: dict[str, Any], rules: list[RuleConfig]) -> list[Fired
     text = facts_text(facts)
 
     for rule in rules:
+        if not getattr(rule, "enabled", True):
+            continue
         tr = rule.triggers
         matched = False
 

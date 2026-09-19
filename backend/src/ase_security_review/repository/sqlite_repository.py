@@ -7,10 +7,11 @@ import json
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from ..data.models import DocumentRow, ReviewRow, SettingsRow
+from ..config.settings import RuleActionConfig, RuleConfig, RuleTriggerConfig
+from ..data.models import DocumentRow, ReviewRow, RuleRow, SettingsRow
 from ..domain.enums import DocStatus, DocType, ExtractionMode, ReviewStatus, TestLevel, parse_test_level
 from ..domain.models import Document, Review
-from .base import DocumentRepository, ReviewRepository, SettingsRepository
+from .base import DocumentRepository, ReviewRepository, RulesRepository, SettingsRepository
 from .serialization import (
     conflict_from_dict,
     conflict_to_dict,
@@ -267,4 +268,79 @@ class SqliteSettingsRepository(SettingsRepository):
                 set_={"json": values["json"], "updated_at": values["updated_at"]},
             )
             session.execute(stmt)
+            session.commit()
+
+
+def _rule_to_row(rule: RuleConfig) -> dict:
+    from datetime import datetime, timezone
+
+    return {
+        "id": rule.id,
+        "name": rule.name,
+        "enabled": int(rule.enabled),
+        "test_level": rule.action.test_level,
+        "priority": rule.action.priority,
+        "cap": rule.action.cap,
+        "triggers_json": json.dumps(rule.triggers.model_dump()),
+        "reasoning": rule.reasoning,
+        "updated_at": datetime.now(timezone.utc),
+    }
+
+
+def _row_to_rule(row) -> RuleConfig:
+    try:
+        triggers = json.loads(row.triggers_json) if row.triggers_json else {}
+    except (TypeError, ValueError):
+        triggers = {}
+    return RuleConfig(
+        id=row.id,
+        name=row.name,
+        enabled=bool(row.enabled),
+        triggers=RuleTriggerConfig(**triggers),
+        action=RuleActionConfig(test_level=row.test_level, priority=row.priority, cap=row.cap),
+        reasoning=row.reasoning,
+    )
+
+
+class SqliteRulesRepository(RulesRepository):
+    def __init__(self, session_factory: sessionmaker[Session]):
+        self._sf = session_factory
+
+    def list(self) -> list[RuleConfig]:
+        with self._sf() as session:
+            rows = session.execute(select(RuleRow).order_by(RuleRow.id)).scalars().all()
+            return [_row_to_rule(r) for r in rows]
+
+    def get(self, rule_id: str) -> RuleConfig | None:
+        with self._sf() as session:
+            row = session.get(RuleRow, rule_id)
+            return _row_to_rule(row) if row else None
+
+    def create(self, rule: RuleConfig) -> RuleConfig:
+        with self._sf() as session:
+            session.add(RuleRow(**_rule_to_row(rule)))
+            session.commit()
+        return rule
+
+    def update(self, rule: RuleConfig) -> RuleConfig:
+        with self._sf() as session:
+            row = session.get(RuleRow, rule.id)
+            if row is None:
+                return self.create(rule)
+            for key, value in _rule_to_row(rule).items():
+                setattr(row, key, value)
+            session.commit()
+        return rule
+
+    def delete(self, rule_id: str) -> None:
+        with self._sf() as session:
+            row = session.get(RuleRow, rule_id)
+            if row:
+                session.delete(row)
+                session.commit()
+
+    def replace_all(self, rules: list[RuleConfig]) -> None:
+        with self._sf() as session:
+            session.query(RuleRow).delete()
+            session.add_all(RuleRow(**_rule_to_row(rule)) for rule in rules)
             session.commit()

@@ -233,6 +233,36 @@ def test_settings_get_and_update(container):
         assert res.status_code == 200
 
 
+def test_rules_crud_api(container):
+    with _client(container) as client:
+        listing = client.get("/api/rules").json()
+        assert {r["id"] for r in listing} >= {"R-06", "R-11"}
+        assert client.get("/api/rules/defaults").json()
+
+        payload = {
+            "id": "R-API",
+            "name": "API rule",
+            "enabled": True,
+            "triggers": {"exposure": ["partner"]},
+            "action": {"test_level": "pentest", "priority": "high"},
+            "reasoning": "api test",
+        }
+        created = client.post("/api/rules", json=payload)
+        assert created.status_code == 201
+        # duplicate -> 409
+        assert client.post("/api/rules", json=payload).status_code == 409
+
+        assert client.get("/api/rules/R-API").status_code == 200
+        assert client.patch("/api/rules/R-API", json={"enabled": False}).json()["enabled"] is False
+        assert client.put("/api/rules/R-API", json={**payload, "name": "Renamed"}).json()["name"] == "Renamed"
+        assert client.delete("/api/rules/R-API").status_code == 200
+        assert client.get("/api/rules/R-API").status_code == 404
+
+        # invalid -> 400
+        assert client.post("/api/rules", json={**payload, "action": {"test_level": "bogus"}}).status_code == 400
+        assert client.post("/api/rules/reset").status_code == 200
+
+
 def test_mark_stale_running_failed(container):
     review = container.review_usecase.create_review("f.pdf", "text", "n.pdf", "text")
     assert container.reviews.get(review.id).status.value == "running"

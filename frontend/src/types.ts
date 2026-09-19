@@ -219,3 +219,25 @@ export interface SettingsResponse {
   embedding_model: string
   embedding_dim: number
 }
+
+export interface RuleTriggers {
+  data_classes: string[]
+  keywords: string[]
+  features: string[]
+  exposure: string[]
+}
+
+export interface RuleAction {
+  test_level: TestLevel
+  priority: string
+  cap: TestLevel | null
+}
+
+export interface Rule {
+  id: string
+  name: string
+  enabled: boolean
+  triggers: RuleTriggers
+  action: RuleAction
+  reasoning: string
+}

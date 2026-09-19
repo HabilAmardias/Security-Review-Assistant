@@ -4,6 +4,7 @@ import { KnowledgeBase } from './pages/KnowledgeBase'
 import { NewReview } from './pages/NewReview'
 import { ReviewDetail } from './pages/ReviewDetail'
 import { ReviewHistory } from './pages/ReviewHistory'
+import { Rules } from './pages/Rules'
 import { Settings } from './pages/Settings'
 
 export default function App() {
@@ -14,6 +15,7 @@ export default function App() {
         <Route path="new-review" element={<NewReview />} />
         <Route path="reviews" element={<ReviewHistory />} />
         <Route path="reviews/:id" element={<ReviewDetail />} />
+        <Route path="rules" element={<Rules />} />
         <Route path="settings" element={<Settings />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

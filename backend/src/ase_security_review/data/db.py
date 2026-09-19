@@ -21,9 +21,11 @@ def create_db_engine(db_path: Path) -> Engine:
 
 def init_db(engine: Engine) -> None:
     from . import models  # noqa: F401  (registers tables on Base.metadata)
+    from .migrations import seed_default_rules
 
     Base.metadata.create_all(engine)
     _migrate(engine)
+    seed_default_rules(engine)
 
 
 # Columns added after a table's first release. Existing SQLite databases are

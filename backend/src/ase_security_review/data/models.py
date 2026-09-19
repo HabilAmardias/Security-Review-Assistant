@@ -37,6 +37,20 @@ class SettingsRow(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class RuleRow(Base):
+    __tablename__ = "rules"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(512))
+    enabled: Mapped[bool] = mapped_column(Integer, default=True, index=True)
+    test_level: Mapped[str] = mapped_column(String(16), index=True)
+    priority: Mapped[str] = mapped_column(String(16), index=True)
+    cap: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    triggers_json: Mapped[str] = mapped_column(Text)
+    reasoning: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class ReviewRow(Base):
     __tablename__ = "reviews"
 

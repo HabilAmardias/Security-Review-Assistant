@@ -243,7 +243,7 @@ export function Settings() {
       </section>
 
       <p className="text-xs text-foreground/50">
-        Rule definitions (R-06/R-11) are read from <code className="font-mono">backend/config/compliance.yaml</code>.
+        Compliance rules are managed on the <strong>Rules</strong> page.
       </p>
     </div>
   )

@@ -74,7 +74,7 @@ audit logging).
 | `repository/` | Port interfaces (ABCs) + SQLite implementations + JSON serialization |
 | `data/` | Infrastructure: SQLite engine/ORM, Chroma store, Ollama HTTP client, file store |
 | `domain/` | Entities, enums, and the pure rule engine |
-| `config/` | `settings.py` (env + business defaults) and `compliance.yaml` (rules) |
+| `config/` | `settings.py` (infra env + business defaults) and rule models |
 | `di.py` | Composition root (dependency injection container) |
 
 ---
@@ -216,15 +216,19 @@ Edited in the UI, validated, persisted in `data/app.db`, and applied to running 
 - **Retrieval & chunking**: chunk size/overlap, embedding batch size, retrieval top-k, review max input chars.
 - **Policy**: enable/disable the rule engine.
 
-### `backend/config/compliance.yaml`
+### Compliance rules — **Rules page** (stored in the DB)
 
-- **`compliance.rules`** — the deterministic rule engine. Two exposure-based **hard-bound** rules:
-  - **R-06** internet/public-facing → `dast` **floor** (never below DAST; STRIDE/LLM can still escalate to `pentest`).
-  - **R-11** intranet/internal-only → `dast` with `cap: dast` (intranet is always DAST-only, even if
-    STRIDE finds critical threats or the LLM suggests pentest).
-  Each rule matches on `data_classes`, `keywords`, `features`, and/or `exposure`
-  extracted from the FRD/NFRD and mandates a `test_level` (`pentest | dast | none`). Fired rules and
-  any rule-bound violations by the agent are shown in every report.
+Deterministic rules act as **hard bounds** on the review verdict and are managed per-rule in the UI
+(create / edit / enable-disable / delete / reset to defaults). Two defaults are seeded on first run:
+
+- **R-06** internet/public-facing → `dast` **floor** (never below DAST; STRIDE/LLM can still escalate to `pentest`).
+- **R-11** intranet/internal-only → `dast` with `cap: dast` (intranet is always DAST-only, even if
+  STRIDE finds critical threats or the LLM suggests pentest).
+
+Each rule matches on `data_classes`, `keywords`, `features`, and/or `exposure` extracted from the
+FRD/NFRD and mandates a `test_level` (`pentest | dast | none`), with an optional `cap`. Fired rules and
+any rule-bound violations by the agent are shown in every report. Rule changes apply to the **next**
+review; past reviews keep their recorded rule snapshot.
 
 ---
 
@@ -254,6 +258,10 @@ Edited in the UI, validated, persisted in `data/app.db`, and applied to running 
 | DELETE | `/api/documents/{id}` | Remove a document + its chunks |
 | GET/PUT | `/api/settings` | Read / update business-logic settings |
 | POST | `/api/settings/reset` | Reset business settings to defaults |
+| GET/POST | `/api/rules` | List / create compliance rules |
+| GET/PUT/PATCH/DELETE | `/api/rules/{id}` | Read / replace / partially update / delete a rule |
+| GET | `/api/rules/defaults` | Seeded default rules |
+| POST | `/api/rules/reset` | Reset rules to defaults |
 | POST | `/api/reviews` | Upload FRD+NFRD (PDF/MD/TXT) and start a review; optional `exposure` form field |
 | GET | `/api/reviews` / `/api/reviews/{id}` | Review history / detail (audit trail) |
 | PATCH | `/api/reviews/{id}/exposure` | Confirm/override the app exposure (recomputes rules) |
@@ -280,7 +288,6 @@ Test fixtures (`tests/fixtures/make_pdf.py`) generate plain and password-protect
 ```
 backend/
   .env.example                  # infrastructure configuration template (copy to .env)
-  config/compliance.yaml        # deterministic decision rules
   src/ase_security_review/
     main.py                     # FastAPI app (serves built frontend too)
     di.py                       # dependency injection container

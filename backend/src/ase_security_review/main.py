@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .config.settings import AppConfig
-from .controller import documents, misc, reviews, settings
+from .controller import documents, misc, reviews, rules, settings
 from .di import Container
 
 
@@ -48,6 +48,7 @@ def create_app(
     app.include_router(documents.router)
     app.include_router(reviews.router)
     app.include_router(settings.router)
+    app.include_router(rules.router)
 
     dist = Path(static_dir) if static_dir else _frontend_dist()
     if dist and dist.exists():

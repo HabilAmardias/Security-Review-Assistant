@@ -6,6 +6,7 @@ import type {
   Health,
   ModelsInfo,
   Review,
+  Rule,
   SettingsResponse,
 } from '../types'
 
@@ -37,6 +38,14 @@ export const api = {
     req<{ settings: BusinessSettings; reindex_required: boolean }>('/settings', json('PUT', settings)),
   resetSettings: () =>
     req<{ settings: BusinessSettings; reindex_required: boolean }>('/settings/reset', { method: 'POST' }),
+
+  rules: () => req<Rule[]>('/rules'),
+  ruleDefaults: () => req<Rule[]>('/rules/defaults'),
+  createRule: (rule: Rule) => req<Rule>('/rules', json('POST', rule)),
+  updateRule: (id: string, rule: Rule) => req<Rule>(`/rules/${id}`, json('PUT', rule)),
+  patchRule: (id: string, patch: Partial<Rule>) => req<Rule>(`/rules/${id}`, json('PATCH', patch)),
+  deleteRule: (id: string) => req<{ deleted: string }>(`/rules/${id}`, { method: 'DELETE' }),
+  resetRules: () => req<Rule[]>('/rules/reset', { method: 'POST' }),
 
   documents: () => req<Document[]>('/documents'),
   reindexAll: () => req<{ started: boolean }>('/documents/reindex', { method: 'POST' }),

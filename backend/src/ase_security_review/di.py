@@ -11,6 +11,7 @@ from .data.ollama_client import OllamaClient
 from .repository.sqlite_repository import (
     SqliteDocumentRepository,
     SqliteReviewRepository,
+    SqliteRulesRepository,
     SqliteSettingsRepository,
 )
 from .usecase.extraction import PdfExtractionService
@@ -18,6 +19,7 @@ from .usecase.fact_extraction import FactExtractionService
 from .usecase.ingestion import IngestionUseCase
 from .usecase.retrieval import RetrievalService
 from .usecase.review import ReviewUseCase
+from .usecase.rules import RulesService
 from .usecase.settings import SettingsService
 
 
@@ -30,17 +32,21 @@ class Container:
             init_db(engine)
             session_factory = make_session_factory(engine)
             settings_repo = SqliteSettingsRepository(session_factory)
-            config = build_config(infra=infra, business=settings_repo.get())
-            self._settings_repo = settings_repo
-            self.engine = engine
-            self.session_factory = session_factory
+            rules_repo = SqliteRulesRepository(session_factory)
+            config = build_config(infra=infra, business=settings_repo.get(), rules=rules_repo.list())
         else:
             self._ensure_dirs(config.data_dir)
-            self.engine = create_db_engine(config.db_path)
-            init_db(self.engine)
-            self.session_factory = make_session_factory(self.engine)
-            self._settings_repo = SqliteSettingsRepository(self.session_factory)
+            engine = create_db_engine(config.db_path)
+            init_db(engine)
+            session_factory = make_session_factory(engine)
+            settings_repo = SqliteSettingsRepository(session_factory)
+            rules_repo = SqliteRulesRepository(session_factory)
+            # rules live in the DB (seeded by migration)
+            config.compliance.rules[:] = rules_repo.list()
 
+        self.engine = engine
+        self.session_factory = session_factory
+        self._settings_repo = settings_repo
         self.config = config
 
         self.documents = SqliteDocumentRepository(self.session_factory)
@@ -59,6 +65,7 @@ class Container:
         self.fact_extraction = FactExtractionService(self.config, self.llm)
         self.review_usecase = ReviewUseCase(self.config, self.reviews, self.retrieval, self.fact_extraction, self.llm)
         self.settings_service = SettingsService(self.config, self._settings_repo, self.llm)
+        self.rules_service = RulesService(self.config, rules_repo)
 
     @staticmethod
     def _ensure_dirs(data_dir: Path) -> None:

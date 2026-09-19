@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
+from ..config.settings import RuleConfig
 from ..domain.enums import DocType
 from ..domain.models import Chunk, Document, RetrievedChunk, Review
 
@@ -83,6 +84,26 @@ class SettingsRepository(ABC):
 
     @abstractmethod
     def save(self, data: dict) -> None: ...
+
+
+class RulesRepository(ABC):
+    @abstractmethod
+    def list(self) -> list[RuleConfig]: ...
+
+    @abstractmethod
+    def get(self, rule_id: str) -> RuleConfig | None: ...
+
+    @abstractmethod
+    def create(self, rule: RuleConfig) -> RuleConfig: ...
+
+    @abstractmethod
+    def update(self, rule: RuleConfig) -> RuleConfig: ...
+
+    @abstractmethod
+    def delete(self, rule_id: str) -> None: ...
+
+    @abstractmethod
+    def replace_all(self, rules: list[RuleConfig]) -> None: ...
 
 
 class LlmPort(ABC):
