@@ -13,7 +13,7 @@ export function NewReview() {
   const [frdPw, setFrdPw] = useState('')
   const [nfrdPw, setNfrdPw] = useState('')
   const [exposure, setExposure] = useState('auto')
-  const [changeScope, setChangeScope] = useState('auto')
+  const [changeScope, setChangeScope] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lockedTarget, setLockedTarget] = useState<{ which: 'frd' | 'nfrd' } | null>(null)
@@ -137,35 +137,21 @@ export function NewReview() {
       </div>
 
       <div className="mt-4 rounded-xl border border-border bg-background p-4">
-        <label className="mb-1 block text-sm font-medium">Change scope</label>
+        <label className="mb-1 block text-sm font-medium" htmlFor="change-scope">
+          Change scope
+        </label>
         <p className="mb-2 text-xs text-foreground/50">
-          Auto-detected from the FRD. A limited change (no business-logic/data impact) is taken into
-          account by the review reasoning.
+          Optional free text. Leave empty to let the agent decide the change scope from the FRD
+          (explicit statement if present, otherwise a summary).
         </p>
-        <div className="flex flex-wrap gap-2">
-          {(
-            [
-              ['auto', 'Auto-detect'],
-              ['limited_change', 'Limited change (no logic impact)'],
-              ['feature_change', 'Feature change'],
-              ['full_new_app', 'New application'],
-              ['other', 'Other'],
-            ] as const
-          ).map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setChangeScope(value)}
-              className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
-                changeScope === value
-                  ? 'border-primary bg-primary/10 font-semibold text-primary'
-                  : 'border-border hover:border-primary/40'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <textarea
+          id="change-scope"
+          rows={2}
+          value={changeScope}
+          onChange={(e) => setChangeScope(e.target.value)}
+          placeholder="e.g. Only load balancer configuration; no change to business logic or business process."
+          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+        />
       </div>
 
       <div className="mt-6 flex justify-end">

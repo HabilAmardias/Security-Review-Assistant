@@ -66,7 +66,7 @@ export const api = {
     if (frdPassword) form.append('frd_password', frdPassword)
     if (nfrdPassword) form.append('nfrd_password', nfrdPassword)
     if (exposure && exposure !== 'auto') form.append('exposure', exposure)
-    if (changeScope && changeScope !== 'auto') form.append('change_scope', changeScope)
+    if (changeScope) form.append('change_scope', changeScope)
     return req<Review>('/reviews', { method: 'POST', body: form })
   },
   updateExposure: (id: string, exposure: string | null) =>

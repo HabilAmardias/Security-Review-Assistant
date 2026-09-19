@@ -7,10 +7,8 @@ from ..domain.models import FormField, Review
 
 
 def ground_change_scope(facts: dict, review: Review) -> dict:
-    """Resolve change_scope: human override > LLM value."""
-    original = facts.get("change_scope") or "other"
-    if original == "infra_config_change":  # legacy value
-        original = "limited_change"
+    """Resolve the free-text change scope: human override > LLM value."""
+    original = facts.get("change_scope") or ""
     facts["change_scope_llm"] = original
     facts["change_scope"] = review.change_scope_override or original
     return facts

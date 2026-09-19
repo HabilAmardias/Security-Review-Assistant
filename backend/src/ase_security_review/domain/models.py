@@ -117,7 +117,7 @@ class Review:
     detected_exposure: str | None = None
     # human-confirmed exposure override (internal | internet-facing | partner)
     exposure_override: str | None = None
-    # human-confirmed change-scope override (limited_change | feature_change | full_new_app | other)
+    # human-confirmed free-text change-scope override
     change_scope_override: str | None = None
     # deterministic form selections extracted from the FRD/NFRD PDFs
     form_fields: list[FormField] = field(default_factory=list)

@@ -94,11 +94,10 @@ def test_threat_override_reruns(threat_container):
 
 
 def test_stage_prompts_are_change_scoped(threat_container):
-    # FRD describes a narrow change; facts carry the quoted change scope
-    threat_container.review_usecase._facts._llm.facts["change_scope_evidence"] = (
-        "Only load balancer configuration; no change to business logic."
-    )
-    threat_container.review_usecase._facts._llm.facts["change_scope"] = "feature_change"
+    # FRD describes a narrow change; facts carry the free-text change scope
+    scope_text = "Only load balancer configuration; no change to business logic."
+    threat_container.review_usecase._facts._llm.facts["change_scope_evidence"] = scope_text
+    threat_container.review_usecase._facts._llm.facts["change_scope"] = scope_text
     review = threat_container.review_usecase.create_review(
         "frd.md",
         "Change load balancer config for the checkout service. No change to checkout logic or data flows.",
@@ -110,8 +109,7 @@ def test_stage_prompts_are_change_scoped(threat_container):
 
     joined = "\n".join(threat_container.review_usecase._threat._llm.generate_calls)
     assert "CHANGE TARGET" in joined
-    assert "Change scope: feature_change" in joined
-    assert "Only load balancer configuration" in joined
+    assert f"Change scope: {scope_text}" in joined
     assert "CHANGE — FRD (review subject)" in joined
     assert "APPLICATION BACKGROUND — NFRD (context only, not the subject)" in joined
     assert "CHANGE SUMMARY (derived from the requirement stage)" in joined

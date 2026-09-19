@@ -30,7 +30,7 @@ class ExposureRequest(BaseModel):
 
 
 class ChangeScopeRequest(BaseModel):
-    change_scope: str | None = None  # limited_change | feature_change | full_new_app | other | null (reset)
+    change_scope: str | None = None  # free-text change scope | null (reset to LLM value)
 
 
 _PDF_MAGIC = b"%PDF"
@@ -99,7 +99,7 @@ async def create_review(
         nfrd_text,
         detected_exposure=detected_exposure,
         exposure_override=exposure if exposure and exposure != "auto" else None,
-        change_scope_override=change_scope if change_scope and change_scope != "auto" else None,
+        change_scope_override=change_scope if change_scope else None,
         form_fields=form_fields,
         diagram_paths=frd_images + nfrd_images,
     )

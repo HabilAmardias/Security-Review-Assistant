@@ -103,22 +103,23 @@ def test_human_exposure_override_recomputes(container):
 
 
 def test_change_scope_override_recomputes(container):
+    scope_text = "Only load balancer configuration; no business logic change."
     review = _run(container, detected_exposure="internet-facing")
-    review = container.review_usecase.apply_override(review.id, change_scope="limited_change")
+    review = container.review_usecase.apply_override(review.id, change_scope=scope_text)
     assert review.status == ReviewStatus.COMPLETED
-    assert review.change_scope_override == "limited_change"
-    assert review.facts["change_scope"] == "limited_change"
+    assert review.change_scope_override == scope_text
+    assert review.facts["change_scope"] == scope_text
     assert review.analysis and "threats" in review.analysis
 
 
 def test_change_scope_comes_from_llm(container):
-    # the LLM's classification is used as-is; a human override still wins
-    container.review_usecase._facts._llm.facts["change_scope"] = "feature_change"
+    # the LLM's free-text classification is used as-is; a human override still wins
+    container.review_usecase._facts._llm.facts["change_scope"] = "Summarized: adjusts checkout styling only."
     review = _run(container, frd="This change is FRONT-END ONLY. No change to business logic.")
-    assert review.facts["change_scope"] == "feature_change"
+    assert review.facts["change_scope"] == "Summarized: adjusts checkout styling only."
 
-    review = container.review_usecase.apply_override(review.id, change_scope="limited_change")
-    assert review.facts["change_scope"] == "limited_change"
+    review = container.review_usecase.apply_override(review.id, change_scope="Reviewer: config-only change.")
+    assert review.facts["change_scope"] == "Reviewer: config-only change."
 
 
 def test_rule_engine_dormant_flag(container):

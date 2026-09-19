@@ -14,7 +14,7 @@ DEFAULT_FACTS = {
     "app_name": "Payment Portal",
     "app_type": "web",
     "exposure": "internet-facing",
-    "change_scope": "limited_change",
+    "change_scope": "Limited change: only load balancer configuration; no change to business logic or business process.",
     "change_scope_evidence": "No change to business logic or business process.",
     "technologies": ["react", "python"],
     "data_classes": ["payment", "pii"],

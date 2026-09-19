@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowsClockwise,
@@ -31,13 +31,6 @@ const EXPOSURE_LABELS: Record<string, string> = {
   'internet-facing': 'Internet-facing',
   partner: 'Partner / External',
   unclear: 'Unclear',
-}
-
-const CHANGE_SCOPE_LABELS: Record<string, string> = {
-  limited_change: 'Limited change (no logic impact)',
-  feature_change: 'Feature change',
-  full_new_app: 'New application',
-  other: 'Other',
 }
 
 function Card({ title, icon, children }: { title: string; icon?: React.ReactNode; children: React.ReactNode }) {
@@ -269,7 +262,16 @@ export function ReviewDetail() {
   const effectiveChangeScope =
     review?.change_scope_override ??
     (review?.facts?.change_scope as string | undefined) ??
-    'other'
+    ''
+
+  const [changeScopeDraft, setChangeScopeDraft] = useState('')
+  const [changeScopeSaving, setChangeScopeSaving] = useState(false)
+  const reviewId = review?.id
+  const reviewScope = review?.facts?.change_scope as string | undefined
+  useEffect(() => {
+    setChangeScopeDraft(effectiveChangeScope ?? '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reviewId, reviewScope])
 
   if (loading && !review) return <p className="text-sm text-foreground/50">Loading review…</p>
   if (error) return <p className="text-sm text-destructive">Failed to load: {error}</p>
@@ -457,44 +459,62 @@ export function ReviewDetail() {
           </Card>
 
           <Card title="Change scope" icon={<ArrowsClockwise size={16} />}>
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="min-w-0 flex-1">
-                <p className="text-sm">
-                  <strong>{CHANGE_SCOPE_LABELS[effectiveChangeScope] ?? effectiveChangeScope ?? '—'}</strong>
-                  {effectiveChangeScope === 'limited_change' && (
-                    <span className="ml-2 rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 text-[10px] uppercase text-accent">
-                      scoped to change
-                    </span>
-                  )}
-                  {review.change_scope_override && (
-                    <span className="ml-2 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-[10px] uppercase text-primary">
-                      override
-                    </span>
-                  )}
-                </p>
-                <p className="mt-0.5 text-xs text-foreground/50">
-                  Changing this re-runs the review reasoning (DAST vs pentest).
-                </p>
-              </div>
-              <select
-                value={effectiveChangeScope}
-                onChange={async (e) => {
-                  const v = e.target.value
+            <div className="mb-2">
+              <p className="text-sm">
+                <strong>{effectiveChangeScope || '—'}</strong>
+                {review.change_scope_override && (
+                  <span className="ml-2 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-[10px] uppercase text-primary">
+                    override
+                  </span>
+                )}
+              </p>
+              <p className="mt-0.5 text-xs text-foreground/50">
+                Free text. Edit and save to re-run the review reasoning with the corrected change scope.
+              </p>
+            </div>
+            <textarea
+              rows={2}
+              value={changeScopeDraft}
+              onChange={(e) => setChangeScopeDraft(e.target.value)}
+              placeholder="e.g. Only load balancer configuration; no change to business logic."
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+              aria-label="Change scope"
+            />
+            <div className="mt-2 flex justify-end gap-2">
+              <button
+                onClick={async () => {
+                  setChangeScopeSaving(true)
                   try {
-                    await api.updateChangeScope(review.id, v === 'auto' ? null : v)
+                    await api.updateChangeScope(review.id, null)
+                    setChangeScopeDraft((review.facts?.change_scope as string | undefined) ?? '')
                   } catch (err) {
                     setSaveMsg(err instanceof Error ? err.message : String(err))
+                  } finally {
+                    setChangeScopeSaving(false)
                   }
                 }}
-                className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                aria-label="Change scope"
+                disabled={changeScopeSaving}
+                className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted disabled:opacity-50"
               >
-                <option value="auto">Auto-detect</option>
-                <option value="limited_change">Limited change (no logic impact)</option>
-                <option value="feature_change">Feature change</option>
-                <option value="full_new_app">New application</option>
-                <option value="other">Other</option>
-              </select>
+                Reset to auto
+              </button>
+              <button
+                onClick={async () => {
+                  setChangeScopeSaving(true)
+                  try {
+                    const value = changeScopeDraft.trim()
+                    await api.updateChangeScope(review.id, value ? value : null)
+                  } catch (err) {
+                    setSaveMsg(err instanceof Error ? err.message : String(err))
+                  } finally {
+                    setChangeScopeSaving(false)
+                  }
+                }}
+                disabled={changeScopeSaving}
+                className="rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-on-primary hover:opacity-90 disabled:opacity-50"
+              >
+                Save & re-run
+              </button>
             </div>
           </Card>
 

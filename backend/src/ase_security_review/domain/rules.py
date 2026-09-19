@@ -41,7 +41,6 @@ def evaluate_facts(facts: dict[str, Any], rules: list[RuleConfig]) -> list[Fired
     data_classes = {str(d).lower() for d in (facts.get("data_classes") or [])}
     features = [str(f).lower() for f in (facts.get("features") or [])]
     exposure = str(facts.get("exposure") or "").lower()
-    change_scope = str(facts.get("change_scope") or "").lower()
     text = facts_text(facts)
 
     for rule in rules:
@@ -65,9 +64,6 @@ def evaluate_facts(facts: dict[str, Any], rules: list[RuleConfig]) -> list[Fired
 
         if not matched and tr.exposure:
             matched = exposure in {e.lower() for e in tr.exposure}
-
-        if not matched and tr.change_scope:
-            matched = change_scope in {c.lower() for c in tr.change_scope}
 
         if matched:
             fired.append(

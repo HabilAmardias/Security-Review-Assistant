@@ -42,7 +42,7 @@ class ReviewRow(Base):
     rule_engine_enabled: Mapped[bool] = mapped_column(Integer, default=True)
     detected_exposure: Mapped[str | None] = mapped_column(String(32), nullable=True)
     exposure_override: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    change_scope_override: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    change_scope_override: Mapped[str | None] = mapped_column(Text, nullable=True)
     form_fields_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     pipeline: Mapped[str | None] = mapped_column(String(16), nullable=True)
     current_stage: Mapped[str | None] = mapped_column(String(32), nullable=True)

@@ -41,7 +41,7 @@ class FactsModel(BaseModel):
     app_type: str = "web"  # web | mobile | api | desktop | internal | other
     exposure: str = "unclear"  # internet-facing | internal | partner | unclear
     exposure_evidence: str = ""
-    change_scope: str = "other"  # full_new_app | feature_change | limited_change | other
+    change_scope: str = ""  # free-text description of what the change touches
     change_scope_evidence: str = ""
     technologies: list[str] = Field(default_factory=list)
     data_classes: list[str] = Field(default_factory=list)

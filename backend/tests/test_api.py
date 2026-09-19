@@ -197,12 +197,13 @@ def test_update_change_scope_patch(container):
         "f.pdf", "Payment checkout.", "n.pdf", "Internet-facing portal.", detected_exposure="internet-facing"
     )
     review = container.review_usecase.run_review(review.id)
+    scope_text = "Only load balancer configuration; no business logic change."
     with _client(container) as client:
-        res = client.patch(f"/api/reviews/{review.id}/change-scope", json={"change_scope": "limited_change"})
+        res = client.patch(f"/api/reviews/{review.id}/change-scope", json={"change_scope": scope_text})
         assert res.status_code == 200
         body = res.json()
-        assert body["change_scope_override"] == "limited_change"
-        assert body["facts"]["change_scope"] == "limited_change"
+        assert body["change_scope_override"] == scope_text
+        assert body["facts"]["change_scope"] == scope_text
 
         # clearing the override falls back to the FRD/LLM value
         res = client.patch(f"/api/reviews/{review.id}/change-scope", json={"change_scope": None})

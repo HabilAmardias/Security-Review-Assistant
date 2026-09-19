@@ -41,8 +41,6 @@ class RuleTriggerConfig(BaseModel):
     features: list[str] = []
     # Matches the structured `exposure` fact: internal | internet-facing | partner
     exposure: list[str] = []
-    # Matches the structured `change_scope` fact: limited_change | feature_change | full_new_app | other
-    change_scope: list[str] = []
 
 
 class RuleActionConfig(BaseModel):

@@ -169,7 +169,9 @@ mode: `auto` / `text` / `ocr`).
 
 > The review is **change-scoped**: the agent analyzes what the FRD change introduces or modifies
 > (requirement, architecture & trust boundaries, assets, STRIDE threats, and test scope), using the
-> rest of the application as background context only. The deterministic rules remain **hard bounds**
+> rest of the application as background context only. The **change scope is free text**, decided by
+> the LLM (the explicit FRD statement when present, otherwise a summary of what the FRD describes)
+> and overridable by the reviewer. The deterministic rules remain **hard bounds**
 > on the final verdict: intranet/internal apps are capped at DAST and internet/public apps require at
 > least DAST. Set `enable_rule_engine: false` in `backend/config/config.yaml` to keep them dormant
 > (STRIDE/LLM decides without bounds).
@@ -239,7 +241,7 @@ review_max_input_chars: 60000 # per-doc input budget for the reasoning LLM
   - **R-06** internet/public-facing → `dast` **floor** (never below DAST; STRIDE/LLM can still escalate to `pentest`).
   - **R-11** intranet/internal-only → `dast` with `cap: dast` (intranet is always DAST-only, even if
     STRIDE finds critical threats or the LLM suggests pentest).
-  Each rule matches on `data_classes`, `keywords`, `features`, `exposure`, and/or `change_scope`
+  Each rule matches on `data_classes`, `keywords`, `features`, and/or `exposure`
   extracted from the FRD/NFRD and mandates a `test_level` (`pentest | dast | none`). Fired rules and
   any rule-bound violations by the agent are shown in every report.
 

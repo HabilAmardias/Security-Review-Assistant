@@ -135,6 +135,20 @@ def test_rule_conflicts_only_on_bound_violation():
     assert rule_conflicts(aggregate_test_level(fired), fired, _decision("dast")) == []
 
 
+def test_free_text_change_scope_is_ignored_by_engine():
+    # change_scope is free text and no longer a rule trigger; evaluation must not fail
+    fired = evaluate_facts(
+        {"exposure": "internal", "change_scope": "Only load balancer configuration; no logic change."},
+        RULES,
+    )
+    assert "R7" in fired_ids(fired)
+
+
+def test_rule_trigger_has_no_change_scope_field():
+    tr = RuleTriggerConfig(exposure=["internal"])
+    assert not hasattr(tr, "change_scope")
+
+
 def test_pentest_required():
     assert pentest_required(TestLevel.PENTEST) is True
     assert pentest_required(TestLevel.DAST) is False
