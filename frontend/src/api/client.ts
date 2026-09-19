@@ -1,10 +1,12 @@
 import type {
+  BusinessSettings,
   Decision,
   Document,
   DocType,
   Health,
   ModelsInfo,
   Review,
+  SettingsResponse,
 } from '../types'
 
 const BASE = '/api'
@@ -30,8 +32,13 @@ export const api = {
   health: () => req<Health>('/health'),
   models: () => req<ModelsInfo>('/models'),
 
+  getSettings: () => req<SettingsResponse>('/settings'),
+  updateSettings: (settings: BusinessSettings) =>
+    req<{ settings: BusinessSettings; reindex_required: boolean }>('/settings', json('PUT', settings)),
+  resetSettings: () =>
+    req<{ settings: BusinessSettings; reindex_required: boolean }>('/settings/reset', { method: 'POST' }),
+
   documents: () => req<Document[]>('/documents'),
-  rescan: () => req<{ enqueued: number }>('/documents/rescan', { method: 'POST' }),
   reindexAll: () => req<{ started: boolean }>('/documents/reindex', { method: 'POST' }),
   uploadDocument: (file: File, docType: DocType, mode?: string, password?: string) => {
     const form = new FormData()

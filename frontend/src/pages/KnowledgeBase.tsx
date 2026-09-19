@@ -49,18 +49,6 @@ export function KnowledgeBase() {
     }
   }
 
-  const rescan = async () => {
-    setBusy(true)
-    try {
-      const r = await api.rescan()
-      setNotice(`Drop folder scanned — ${r.enqueued} new/changed file(s) enqueued.`)
-    } catch (err) {
-      setNotice(err instanceof Error ? err.message : String(err))
-    } finally {
-      setBusy(false)
-    }
-  }
-
   const reindex = async () => {
     setBusy(true)
     setNotice(null)
@@ -92,14 +80,6 @@ export function KnowledgeBase() {
           >
             <ArrowsClockwise size={16} className={busy ? 'animate-spin' : ''} />
             Rebuild index
-          </button>
-          <button
-            onClick={() => void rescan()}
-            disabled={busy}
-            className="flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
-          >
-            <ArrowsClockwise size={16} className={busy ? 'animate-spin' : ''} />
-            Scan drop folder
           </button>
         </div>
       </header>
@@ -188,7 +168,7 @@ export function KnowledgeBase() {
             </div>
             {grouped[t].length === 0 ? (
               <p className="rounded-lg border border-dashed border-border px-4 py-4 text-xs text-foreground/40">
-                No documents yet. Drop PDFs into <code className="font-mono">data/dropbox/{t}/</code> or upload above.
+                No documents yet. Upload a PDF above to add it to the knowledge base.
               </p>
             ) : (
               <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-background">

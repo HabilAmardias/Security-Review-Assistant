@@ -77,6 +77,14 @@ class ReviewRepository(ABC):
     def mark_stale_running_failed(self) -> int: ...
 
 
+class SettingsRepository(ABC):
+    @abstractmethod
+    def get(self) -> dict | None: ...
+
+    @abstractmethod
+    def save(self, data: dict) -> None: ...
+
+
 class LlmPort(ABC):
     @abstractmethod
     def generate(

@@ -11,13 +11,18 @@ from ..repository.base import LlmPort
 
 
 class OllamaClient(LlmPort):
-    def __init__(self, config: LlmConfig):
+    def __init__(
+        self,
+        config: LlmConfig,
+        base_url: str = "http://127.0.0.1:11434",
+        request_timeout_sec: int | None = None,
+    ):
         self._config = config
+        self._base_url = base_url
         # httpx accepts None to disable timeouts entirely.
-        timeout = config.request_timeout_sec if config.request_timeout_sec else None
         self._client = httpx.Client(
-            base_url=config.base_url.rstrip("/"),
-            timeout=timeout,
+            base_url=base_url.rstrip("/"),
+            timeout=request_timeout_sec if request_timeout_sec else None,
         )
 
     def generate(
@@ -39,11 +44,9 @@ class OllamaClient(LlmPort):
             raise RuntimeError(f"Ollama error: {data['error']}")
         content = data.get("message", {}).get("content", "")
         if not content:
-            msg = data.get("message", {}) or {}
-            thinking = msg.get("thinking") or ""
             detail = (
                 f"model consumed all {self._config.max_tokens} output tokens on reasoning "
-                "without producing an answer — set llm.thinking.<step> to false (config.yaml)"
+                "without producing an answer — set the step's thinking toggle to false (Settings)"
                 if data.get("done_reason") == "length"
                 else "no tokens generated"
             )
@@ -93,6 +96,16 @@ class OllamaClient(LlmPort):
         )
         resp.raise_for_status()
         return resp.json().get("embeddings", [])
+
+    def probe_embedding_dim(self, model: str) -> int | None:
+        """Return the embedding dimension produced by a model (None on failure)."""
+        try:
+            resp = self._client.post("/api/embed", json={"model": model, "input": ["dimension probe"]})
+            resp.raise_for_status()
+            embeddings = resp.json().get("embeddings") or []
+            return len(embeddings[0]) if embeddings else None
+        except Exception:
+            return None
 
     def list_models(self) -> list[str]:
         try:

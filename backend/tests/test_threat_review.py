@@ -7,7 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from ase_security_review.config.settings import AppConfig, ExtractionConfig, LlmConfig, load_config
+from ase_security_review.config.settings import (
+    AppConfig,
+    ExtractionConfig,
+    InfraSettings,
+    LlmConfig,
+    load_compliance,
+)
 from ase_security_review.di import Container
 from ase_security_review.domain.enums import ReviewStatus
 from tests.fakes import FakeLlm, InMemoryVectorRepository
@@ -15,13 +21,11 @@ from tests.fakes import FakeLlm, InMemoryVectorRepository
 
 @pytest.fixture()
 def threat_container():
-    real = load_config()
     cfg = AppConfig(
+        infra=InfraSettings(data_dir=Path(tempfile.mkdtemp(prefix="ase-threat-"))),
         llm=LlmConfig(reasoning_model="fake", embedding_model="fake", embedding_dim=32),
         extraction=ExtractionConfig(default_mode="auto", auto_detect_threshold=50),
-        compliance=real.compliance,
-        data_dir=Path(tempfile.mkdtemp(prefix="ase-threat-")),
-        pipeline="threat",
+        compliance=load_compliance(),
     )
     c = Container(cfg)
     fake = FakeLlm()

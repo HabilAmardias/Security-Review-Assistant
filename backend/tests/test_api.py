@@ -211,6 +211,28 @@ def test_update_change_scope_patch(container):
         assert res.json()["change_scope_override"] is None
 
 
+def test_settings_get_and_update(container):
+    with _client(container) as client:
+        res = client.get("/api/settings")
+        assert res.status_code == 200
+        body = res.json()
+        assert "settings" in body and "defaults" in body and "models" in body
+        assert "llm" in body["settings"]
+
+        res = client.put("/api/settings", json={"llm": {"temperature": 0.33}, "retrieval": {"chunk_size": 1111}})
+        assert res.status_code == 200
+        updated = res.json()["settings"]
+        assert updated["llm"]["temperature"] == 0.33
+        assert updated["retrieval"]["chunk_size"] == 1111
+
+        # invalid update rejected
+        res = client.put("/api/settings", json={"llm": {"temperature": "hot"}})
+        assert res.status_code == 400
+
+        res = client.post("/api/settings/reset")
+        assert res.status_code == 200
+
+
 def test_mark_stale_running_failed(container):
     review = container.review_usecase.create_review("f.pdf", "text", "n.pdf", "text")
     assert container.reviews.get(review.id).status.value == "running"

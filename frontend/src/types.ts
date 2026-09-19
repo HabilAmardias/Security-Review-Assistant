@@ -177,3 +177,45 @@ export interface ModelsInfo {
   reasoning_model: string
   embedding_model: string
 }
+
+export interface LlmSettings {
+  reasoning_model: string
+  embedding_model: string
+  embedding_dim: number
+  temperature: number
+  max_tokens: number
+  num_ctx: number
+  thinking: Record<string, boolean>
+}
+
+export interface ExtractionSettings {
+  default_mode: string
+  auto_detect_threshold: number
+  ocr_language: string
+  diagram_dpi: number
+  max_diagram_pages: number
+}
+
+export interface RetrievalSettings {
+  chunk_size: number
+  chunk_overlap: number
+  embed_batch_size: number
+  retrieval_top_k: number
+  review_max_input_chars: number
+  enable_rule_engine: boolean
+}
+
+export interface BusinessSettings {
+  llm: LlmSettings
+  extraction: ExtractionSettings
+  retrieval: RetrievalSettings
+}
+
+export interface SettingsResponse {
+  settings: BusinessSettings
+  defaults: BusinessSettings
+  models: string[]
+  reasoning_model: string
+  embedding_model: string
+  embedding_dim: number
+}

@@ -42,7 +42,7 @@ class IngestionUseCase:
     # ---- registration -----------------------------------------------------
 
     def register_file(self, path: Path, doc_type: DocType) -> Document:
-        """Register a PDF found in the drop folder / upload. Idempotent by content hash.
+        """Register an uploaded PDF. Idempotent by content hash.
 
         A file with the same path but a new hash replaces the previous version
         (old chunks are deleted, a fresh document is indexed).

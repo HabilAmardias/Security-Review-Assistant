@@ -67,13 +67,6 @@ def upload_document(
     return document_to_dict(doc)
 
 
-@router.post("/rescan")
-def rescan_dropbox(request: Request):
-    c = get_container(request)
-    count = c.watcher.scan_now()
-    return {"enqueued": count}
-
-
 @router.post("/reindex")
 def reindex_documents(request: Request):
     c = get_container(request)

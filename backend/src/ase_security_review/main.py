@@ -9,8 +9,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from .config.settings import AppConfig, load_config
-from .controller import documents, misc, reviews
+from .config.settings import AppConfig
+from .controller import documents, misc, reviews, settings
 from .di import Container
 
 
@@ -38,7 +38,7 @@ def create_app(
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+        allow_origins=container.config.infra.cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -47,6 +47,7 @@ def create_app(
     app.include_router(misc.router)
     app.include_router(documents.router)
     app.include_router(reviews.router)
+    app.include_router(settings.router)
 
     dist = Path(static_dir) if static_dir else _frontend_dist()
     if dist and dist.exists():

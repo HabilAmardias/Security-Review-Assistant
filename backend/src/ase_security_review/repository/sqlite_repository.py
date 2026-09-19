@@ -7,10 +7,10 @@ import json
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from ..data.models import DocumentRow, ReviewRow
+from ..data.models import DocumentRow, ReviewRow, SettingsRow
 from ..domain.enums import DocStatus, DocType, ExtractionMode, ReviewStatus, TestLevel, parse_test_level
 from ..domain.models import Document, Review
-from .base import DocumentRepository, ReviewRepository
+from .base import DocumentRepository, ReviewRepository, SettingsRepository
 from .serialization import (
     conflict_from_dict,
     conflict_to_dict,
@@ -232,3 +232,39 @@ class SqliteReviewRepository(ReviewRepository):
             )
             session.commit()
             return count
+
+
+class SqliteSettingsRepository(SettingsRepository):
+    _ID = "app"
+
+    def __init__(self, session_factory: sessionmaker[Session]):
+        self._sf = session_factory
+
+    def get(self) -> dict | None:
+        with self._sf() as session:
+            row = session.get(SettingsRow, self._ID)
+            if not row or not row.json:
+                return None
+            try:
+                return json.loads(row.json)
+            except (TypeError, ValueError):
+                return None
+
+    def save(self, data: dict) -> None:
+        from datetime import datetime, timezone
+
+        from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+        values = {
+            "id": self._ID,
+            "json": json.dumps(data),
+            "updated_at": datetime.now(timezone.utc),
+        }
+        with self._sf() as session:
+            stmt = sqlite_insert(SettingsRow).values(**values)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=[SettingsRow.id],
+                set_={"json": values["json"], "updated_at": values["updated_at"]},
+            )
+            session.execute(stmt)
+            session.commit()

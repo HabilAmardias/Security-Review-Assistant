@@ -123,7 +123,7 @@ def test_change_scope_comes_from_llm(container):
 
 
 def test_rule_engine_dormant_flag(container):
-    container.config.enable_rule_engine = False
+    container.config.retrieval.enable_rule_engine = False
     review = _run(container, detected_exposure="internal")
     assert review.status == ReviewStatus.COMPLETED
     assert review.rules_fired == []

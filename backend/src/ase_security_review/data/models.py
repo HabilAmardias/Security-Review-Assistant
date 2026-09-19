@@ -29,6 +29,14 @@ class DocumentRow(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class SettingsRow(Base):
+    __tablename__ = "settings"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class ReviewRow(Base):
     __tablename__ = "reviews"
 

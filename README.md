@@ -54,16 +54,15 @@ audit logging).
 │  Web UI (React/Vite)  ──  FastAPI (127.0.0.1:8000)            │
 │   Knowledge Base   New Review   Review Detail   Settings       │
 ├───────────────────────────────────┬───────────────────────────┤
-│  Ingestion pipeline               │  Review agent             │
-│   drop folder watcher             │  1. Extract facts (LLM)   │
-│   pypdf (in-memory decrypt)       │  2. Hybrid RRF retrieval  │
-│   text / auto / OCR modes         │  3. Rule engine (rules)   │
-│   hierarchical chunking           │  4. LLM decision (JSON)   │
-│   batched embedding → Chroma      │  5. Conflict check        │
+│  Ingestion pipeline (UI upload)   │  Review agent             │
+│   pypdf (in-memory decrypt)       │  1. Extract facts (LLM)   │
+│   text / auto / OCR modes         │  2. Hybrid RRF retrieval  │
+│   hierarchical chunking           │  3. Rule engine (bounds)  │
+│   batched embedding → Chroma      │  4. STRIDE pipeline       │
 ├───────────────────────────────────┴───────────────────────────┤
-│  Storage: data/dropbox, data/extracted, data/chroma, app.db   │
+│  Storage: data/documents, data/extracted, data/chroma, app.db │
 └───────────────────────────────────────────────────────────────┘
-        Ollama: gemma (reasoning) + gemma-embedding (embeddings)
+        Ollama: reasoning model + embedding model (configured in the UI)
 ```
 
 ### Backend layers (`backend/src/ase_security_review/`)
@@ -71,11 +70,11 @@ audit logging).
 | Layer | Role |
 |---|---|
 | `controller/` | Thin FastAPI routers + Pydantic request/response schemas |
-| `usecase/` | Application logic: ingestion, folder watcher, retrieval, fact extraction, review pipeline, chunking, PDF extraction |
+| `usecase/` | Application logic: ingestion, retrieval, fact extraction, threat pipeline, chunking, PDF extraction, settings |
 | `repository/` | Port interfaces (ABCs) + SQLite implementations + JSON serialization |
 | `data/` | Infrastructure: SQLite engine/ORM, Chroma store, Ollama HTTP client, file store |
 | `domain/` | Entities, enums, and the pure rule engine |
-| `config/` | `config.yaml` + `compliance.yaml` loaders |
+| `config/` | `settings.py` (env + business defaults) and `compliance.yaml` (rules) |
 | `di.py` | Composition root (dependency injection container) |
 
 ---
@@ -98,16 +97,17 @@ audit logging).
 ### 1. Ollama models
 
 ```bash
-ollama pull qwen2.5:7b-instruct-q4_K_M   # reasoning (edit config to choose another)
+ollama pull qwen2.5:7b-instruct-q4_K_M   # reasoning
 ollama pull qwen3-embedding:0.6b         # embeddings (multilingual EN/ID)
 ```
 
-The models are configurable — see `backend/config/config.yaml`.
+The models are selected in the **Settings** page of the UI.
 
 ### 2. Backend (uv)
 
 ```bash
 cd backend
+cp .env.example .env          # infrastructure config (Ollama URL, data dir, host/port)
 uv sync
 uv run pytest                 # run the test suite
 uv run ase-security-review    # or: uv run uvicorn ase_security_review.main:app --port 8000
@@ -131,23 +131,14 @@ you can instead run `pnpm dev` and open `http://localhost:5173`.
 
 ### Add SOP / policies / previous reviews (the knowledge base)
 
-Drop PDFs into the drop folder — the background watcher indexes them automatically:
-
-```
-backend/data/dropbox/
-  sop/        # e.g. SOP_PentestSelection.pdf
-  policy/     # e.g. POLICY_DataClassification.pdf
-  previous/   # e.g. PREV_Review_PaymentPortal_2024.pdf (becomes precedent)
-```
-
-Or upload via the **Knowledge Base** page (choose type: SOP / Policy / Previous, and an extraction
-mode: `auto` / `text` / `ocr`).
+Upload PDFs via the **Knowledge Base** page (choose type: SOP / Policy / Previous, and an extraction
+mode: `auto` / `text` / `ocr`). There is no drop folder — ingestion is UI-only.
 
 - **Locked PDF?** It appears as *Needs password*. Enter the password once in the UI — used in
   memory only, never stored. Re-indexing later needs no password.
 - **Scanned PDF?** In `auto` mode a PDF whose text density is too low is flagged *Needs OCR* —
   click **Run OCR** (requires Tesseract). You can also force `ocr` mode.
-- **Updating a document?** Re-dropping a file with the same name but new content replaces it
+- **Updating a document?** Re-uploading a file with the same name but new content replaces it
   (old chunks are removed and re-indexed). Identical content is skipped.
 
 ### Run a review
@@ -173,7 +164,7 @@ mode: `auto` / `text` / `ocr`).
 > the LLM (the explicit FRD statement when present, otherwise a summary of what the FRD describes)
 > and overridable by the reviewer. The deterministic rules remain **hard bounds**
 > on the final verdict: intranet/internal apps are capped at DAST and internet/public apps require at
-> least DAST. Set `enable_rule_engine: false` in `backend/config/config.yaml` to keep them dormant
+> least DAST. Toggle **Enable rule engine** in the Settings page to keep them dormant
 > (STRIDE/LLM decides without bounds).
 
 ### The output
@@ -198,42 +189,32 @@ mode: `auto` / `text` / `ocr`).
 
 ## Configuration
 
-### `backend/config/config.yaml`
+### Infrastructure — `backend/.env`
 
-```yaml
-llm:
-  base_url: "http://127.0.0.1:11434"
-  reasoning_model: "qwen2.5:7b-instruct-q4_K_M"   # change freely
-  embedding_model: "qwen3-embedding:0.6b"          # change freely; must match embedding_dim
-  embedding_dim: 1024                              # output size of the embedding model
-  num_ctx: 16384        # context window; Ollama's 4096 default truncates long reviews
-  thinking:             # per-step reasoning toggle (unlisted step defaults to false)
-    fact_extraction: false
-    diagrams: false
-    requirement: true
-    architecture: true
-    assets: false
-    threats: true
-    decision: true
+Copy `backend/.env.example` to `backend/.env`. Only deployment-level settings live here:
+
+```dotenv
+ASE_OLLAMA_BASE_URL=http://127.0.0.1:11434
+# ASE_REQUEST_TIMEOUT_SEC=300        # unset = no timeout (recommended for slow local models)
+ASE_DATA_DIR=data
+ASE_HOST=127.0.0.1
+ASE_PORT=8000
+ASE_CORS_ORIGINS=["http://localhost:5173","http://127.0.0.1:5173"]
+ASE_ASYNCIO_DEBUG=false
+ASE_LOG_LEVEL=INFO
 ```
 
-> Changing the embedding model: update `embedding_dim` to the new model's output size. On the next
-> restart the vector index is rebuilt automatically from the cached plaintext (no PDFs or passwords
-> needed), or use the **Rebuild index** button on the Knowledge Base page.
+### Business logic — **Settings page** (stored in the DB, applied without restart)
 
-extraction:
-  default_mode: "auto"        # auto | text | ocr
-  auto_detect_threshold: 50   # chars/page below this → flag NEEDS_OCR
-  ocr_language: "eng"         # tesseract language, e.g. "eng", "ind", "eng+ind"
+Edited in the UI, validated, persisted in `data/app.db`, and applied to running components:
 
-data_dir: "data"
-poll_interval_sec: 10         # drop folder scan interval
-chunk_size: 900
-chunk_overlap: 120
-embed_batch_size: 64
-retrieval_top_k: 6
-review_max_input_chars: 60000 # per-doc input budget for the reasoning LLM
-```
+- **Models**: reasoning + embedding model (dropdowns of installed Ollama models) and embedding dimension
+  (auto-probed). Changing the embedding model triggers a knowledge-base re-index.
+- **Generation**: temperature, max tokens, context window (`num_ctx`).
+- **Thinking**: per-step reasoning toggle (fact extraction, diagrams, requirement, architecture, assets, threats, decision).
+- **Extraction & diagrams**: default mode, OCR threshold/language, diagram DPI, max diagram pages.
+- **Retrieval & chunking**: chunk size/overlap, embedding batch size, retrieval top-k, review max input chars.
+- **Policy**: enable/disable the rule engine.
 
 ### `backend/config/compliance.yaml`
 
@@ -266,11 +247,13 @@ review_max_input_chars: 60000 # per-doc input budget for the reasoning LLM
 | GET | `/api/health` | Ollama status, models, indexed chunk count |
 | GET | `/api/models` | Available models + configured models |
 | GET/POST | `/api/documents` | List / upload knowledge-base documents |
-| POST | `/api/documents/rescan` | Trigger a drop-folder scan |
+| POST | `/api/documents/reindex` | Rebuild the vector index from cached plaintext |
 | POST | `/api/documents/{id}/unlock` | Unlock a password-protected PDF (in-memory only) |
 | POST | `/api/documents/{id}/ocr` | Run OCR on a scanned document |
 | GET | `/api/documents/{id}/progress` | Ingestion status for one document |
 | DELETE | `/api/documents/{id}` | Remove a document + its chunks |
+| GET/PUT | `/api/settings` | Read / update business-logic settings |
+| POST | `/api/settings/reset` | Reset business settings to defaults |
 | POST | `/api/reviews` | Upload FRD+NFRD (PDF/MD/TXT) and start a review; optional `exposure` form field |
 | GET | `/api/reviews` / `/api/reviews/{id}` | Review history / detail (audit trail) |
 | PATCH | `/api/reviews/{id}/exposure` | Confirm/override the app exposure (recomputes rules) |
@@ -296,14 +279,14 @@ Test fixtures (`tests/fixtures/make_pdf.py`) generate plain and password-protect
 
 ```
 backend/
-  config/config.yaml            # model + tuning configuration
+  .env.example                  # infrastructure configuration template (copy to .env)
   config/compliance.yaml        # deterministic decision rules
   src/ase_security_review/
     main.py                     # FastAPI app (serves built frontend too)
     di.py                       # dependency injection container
     config/ domain/ repository/ data/ usecase/ controller/
   tests/                        # pytest suite + PDF fixture generator
-  data/dropbox/{sop,policy,previous}   # <-- drop your documents here
+  data/documents/               # uploaded knowledge-base PDFs (via the UI)
 
 frontend/
   src/pages/                    # KnowledgeBase, NewReview, ReviewDetail, History, Settings
